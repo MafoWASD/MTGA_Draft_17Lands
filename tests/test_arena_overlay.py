@@ -6,7 +6,12 @@ import pytest
 
 from src import constants
 from src.overlay_layout import slot_rect_for_index
-from src.ui.windows.arena_overlay import ArenaOverlay
+from src.ui.windows.arena_overlay import (
+    ArenaOverlay,
+    GIHWR_BADGE_HEIGHT,
+    GIHWR_BADGE_MARGIN,
+    GIHWR_BADGE_WIDTH,
+)
 from src.ui.styles import Theme
 
 
@@ -16,6 +21,15 @@ def root():
     Theme.apply(r, "Dark")
     yield r
     r.destroy()
+
+
+def _rec(name, score, is_elite=False, base_win_rate=0.0):
+    return SimpleNamespace(
+        card_name=name,
+        contextual_score=score,
+        is_elite=is_elite,
+        base_win_rate=base_win_rate,
+    )
 
 
 @patch("tkinter.Toplevel.overrideredirect")
@@ -110,8 +124,8 @@ def test_update_data_maps_each_card_to_its_slot_rect(mock_ov, root):
         {constants.DATA_FIELD_NAME: "Card B"},
     ]
     recommendations = [
-        SimpleNamespace(card_name="Card A", contextual_score=88, is_elite=False),
-        SimpleNamespace(card_name="Card B", contextual_score=42, is_elite=False),
+        _rec("Card A", 88),
+        _rec("Card B", 42),
     ]
 
     overlay.update_data(pack_cards, recommendations)
@@ -158,16 +172,12 @@ def test_update_data_clears_slots_when_arena_not_found(mock_ov, root):
 
     overlay.update_data(
         [{constants.DATA_FIELD_NAME: "Card A"}],
-        [SimpleNamespace(card_name="Card A", contextual_score=88, is_elite=False)],
+        [_rec("Card A", 88)],
     )
 
     assert overlay.slot_data == []
 
     overlay.destroy()
-
-
-def _rec(name, score, is_elite=False):
-    return SimpleNamespace(card_name=name, contextual_score=score, is_elite=is_elite)
 
 
 @patch("tkinter.Toplevel.overrideredirect")
@@ -230,3 +240,82 @@ def test_badge_colors_for_recommendation_tiers(recommendation, expected_colors):
     from src.ui.windows.arena_overlay import badge_colors_for_recommendation
 
     assert badge_colors_for_recommendation(recommendation) == expected_colors
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_gihwr_badge_renders_when_win_rate_positive(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}],
+        [_rec("Card A", 88, base_win_rate=58.4)],
+    )
+
+    # VALUE badge (oval+text) + GIHWR badge (rect+text) = 4 items.
+    assert len(overlay.canvas.find_withtag("badge")) == 4
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_gihwr_badge_skipped_when_win_rate_missing(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}],
+        [_rec("Card A", 88, base_win_rate=0.0)],
+    )
+
+    # Only the VALUE badge (oval+text) = 2 items, no GIHWR badge drawn.
+    assert len(overlay.canvas.find_withtag("badge")) == 2
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_gihwr_badge_text_includes_arrow_and_rounded_percentage(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}],
+        [_rec("Card A", 88, base_win_rate=58.6)],
+    )
+
+    texts = [
+        overlay.canvas.itemcget(item, "text")
+        for item in overlay.canvas.find_withtag("badge")
+        if overlay.canvas.type(item) == "text"
+    ]
+    assert "↑ 59%" in texts
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_gihwr_badge_positioned_top_left_of_slot(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}],
+        [_rec("Card A", 88, base_win_rate=58.4)],
+    )
+
+    rects = [
+        overlay.canvas.coords(item)
+        for item in overlay.canvas.find_withtag("badge")
+        if overlay.canvas.type(item) == "rectangle"
+    ]
+    assert len(rects) == 1
+    left, top, right, bottom = rects[0]
+
+    slot_left, slot_top, _slot_right, _slot_bottom = overlay.slot_data[0]["slot"]
+    assert left == pytest.approx(slot_left + GIHWR_BADGE_MARGIN)
+    assert top == pytest.approx(slot_top + GIHWR_BADGE_MARGIN)
+    assert right - left == pytest.approx(GIHWR_BADGE_WIDTH)
+    assert bottom - top == pytest.approx(GIHWR_BADGE_HEIGHT)
+
+    overlay.destroy()
