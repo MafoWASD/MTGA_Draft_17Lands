@@ -283,6 +283,10 @@ class AppController:
                 scores,
             )
 
+        arena_overlay = getattr(self.app, "arena_overlay", None)
+        if arena_overlay:
+            arena_overlay.update_data(pack_cards, recommendations)
+
         # Broadcast refresh downwards
         for p in [
             self.app.panel_taken,
