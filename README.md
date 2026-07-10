@@ -72,6 +72,21 @@ macOS actively quarantines unsigned apps downloaded from the internet. To run th
 
 ---
 
+### Optional: Arena Overlay (Beta)
+
+The Arena Overlay (`File -> Preferences -> Arena Overlay (Beta)`, Windows only) draws
+VALUE/GIHWR badges directly on top of your pack in Arena. Since Arena's log doesn't record
+where each card sits on screen, the overlay reads card names off the live screen via OCR to
+place badges correctly. This needs the **Tesseract OCR engine** installed separately (it's not
+a Python package — `pip`/`poetry install` only installs the `pytesseract` wrapper around it):
+
+- **Windows:** Install it from the [UB-Mannheim Tesseract build](https://github.com/UB-Mannheim/tesseract/wiki) (default path
+  `C:\Program Files\Tesseract-OCR\tesseract.exe`).
+- If Tesseract isn't installed, the overlay still works but falls back to the draft log's raw
+  card order, which may not match Arena's on-screen layout.
+
+---
+
 ## Marquee Features
 
 - **Compositional Brain (v5.5):** A custom tactical engine that calculates a 0-100 `VALUE` score for cards in your pack. It dynamically weights raw Z-Score power, color lane commitment, curve needs, and relative wheel probability to suggest optimal picks. Look for the ⭐ symbol for elite "Bomb" picks.
