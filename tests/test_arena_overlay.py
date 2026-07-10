@@ -339,6 +339,45 @@ def test_update_data_uses_ocr_to_resolve_true_slot_positions(
     overlay.destroy()
 
 
+@patch("src.ui.windows.arena_overlay.logger")
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_logs_raw_order_agreement_with_ocr(
+    mock_ov, mock_available, mock_identify, mock_logger, root
+):
+    """Diagnostic: reports how often the log's raw order already matches OCR,
+    so we can tell whether OCR is only needed for a pack's first reveal."""
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [
+        {constants.DATA_FIELD_NAME: "Card A"},
+        {constants.DATA_FIELD_NAME: "Card B"},
+    ]
+    # Slot 0 really is Card A (agrees with raw order), slot 1 really is
+    # Card A too... no: slot 1 really is Card A means a mismatch since raw
+    # order says slot 1 should be Card B.
+    mock_identify.return_value = {0: "Card A", 1: "Card A"}
+
+    overlay.update_data(pack_cards, [_rec("Card A", 88), _rec("Card B", 42)])
+    overlay._drain_ocr_results()
+
+    agreement_calls = [
+        call
+        for call in mock_logger.info.call_args_list
+        if "agrees with OCR" in call.args[0]
+    ]
+    assert len(agreement_calls) == 1
+    # 1 of the 2 resolved slots (slot 0) matches raw log order.
+    assert agreement_calls[0].args[1] == 1
+    assert agreement_calls[0].args[2] == 2
+
+    overlay.destroy()
+
+
 @patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
 @patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
 @patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
