@@ -17,6 +17,11 @@ logger = create_logger()
 
 POLL_INTERVAL_MS = 250
 
+# Windows-only colorkey: pixels of this exact color are made fully invisible
+# and click-through by wm "-transparentcolor", instead of dimming the whole
+# window uniformly with -alpha. Chosen to not collide with any badge color.
+TRANSPARENT_COLOR_KEY = "#010101"
+
 BADGE_RADIUS = 18
 BADGE_FONT = ("Segoe UI", 11, "bold")
 
@@ -75,16 +80,30 @@ class ArenaOverlay(tb.Toplevel):
         self._poll_job = None
 
         self.overrideredirect(True)
-        try:
-            self.attributes("-alpha", 0.85)
-        except Exception:
-            pass
 
         self.slot_data = []
         self._last_rect = None
 
-        self.canvas = tkinter.Canvas(self, bg="black", highlightthickness=0, bd=0)
+        self.canvas = tkinter.Canvas(
+            self, bg=TRANSPARENT_COLOR_KEY, highlightthickness=0, bd=0
+        )
         self.canvas.pack(fill="both", expand=True)
+
+        if sys.platform == "win32":
+            try:
+                # Some systems quantize the raw hex slightly; read back Tk's
+                # actually-resolved canvas color so the colorkey match is
+                # exact, not just nominal.
+                self.attributes("-transparentcolor", self.canvas.cget("bg"))
+            except Exception:
+                pass
+        else:
+            # -transparentcolor is Windows-only; fall back to uniform dimming
+            # elsewhere so the overlay is still usable for local development.
+            try:
+                self.attributes("-alpha", 0.85)
+            except Exception:
+                pass
 
         self.withdraw()
         self.update_idletasks()
