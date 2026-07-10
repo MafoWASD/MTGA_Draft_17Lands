@@ -29,6 +29,11 @@ NAME_REGION_HEIGHT_PCT = 0.16
 # dissimilar card names in a pack.
 FUZZY_MATCH_CUTOFF = 0.4
 
+# Reads this short are rejected before scoring at all — difflib's ratio can
+# cross even FUZZY_MATCH_CUTOFF by chance on a couple of stray characters
+# (real example: OCR read "oe" and it scored 0.5 against "Forest").
+MIN_TEXT_LENGTH_FOR_MATCH = 4
+
 # The Windows Tesseract installer doesn't add itself to PATH by default, so
 # pytesseract's bare "tesseract" command often can't find it even when it's
 # installed. Fall back to the installer's default locations.
@@ -245,8 +250,15 @@ def recognize_text(image: Image.Image) -> str:
 def match_card_name(
     recognized_text: str, candidate_names: List[str]
 ) -> Optional[str]:
-    """Fuzzy-matches OCR'd text against known candidate card names."""
+    """Fuzzy-matches OCR'd text against known candidate card names.
+
+    Very short reads (a couple of stray characters) are rejected outright:
+    difflib's ratio can cross even a loose cutoff by chance on short strings
+    (e.g. "oe" scores 0.5 against "Forest") — that's noise, not a name.
+    """
     if not recognized_text or not candidate_names:
+        return None
+    if len(recognized_text.strip()) < MIN_TEXT_LENGTH_FOR_MATCH:
         return None
 
     matches = difflib.get_close_matches(

@@ -182,6 +182,19 @@ def test_match_card_name_returns_none_for_empty_input():
     assert match_card_name("Web Up", []) is None
 
 
+def test_match_card_name_rejects_short_reads_even_if_ratio_would_pass():
+    """Real false positive: OCR read 'oe' off a near-blank slot and it
+    scored 0.5 against 'Forest' — well above FUZZY_MATCH_CUTOFF (0.4)."""
+    assert match_card_name("oe", ["Forest", "Web Up"]) is None
+
+
+def test_match_card_name_rejects_single_character_reads():
+    candidates = ["Web Up", "Take Up the Shield"]
+
+    assert match_card_name("a", candidates) is None
+    assert match_card_name("7", candidates) is None
+
+
 @patch("src.card_name_ocr._get_win32_capture_api", return_value=None)
 def test_capture_window_returns_none_when_api_unavailable(mock_api):
     assert card_name_ocr.capture_window(123) is None
