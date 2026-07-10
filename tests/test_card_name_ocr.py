@@ -118,7 +118,9 @@ def test_capture_region_grabs_the_given_rect(mock_image_grab):
 
     capture_region(rect)
 
-    mock_image_grab.grab.assert_called_once_with(bbox=rect)
+    # all_screens=True is required for secondary-monitor rects to capture
+    # correctly on Windows.
+    mock_image_grab.grab.assert_called_once_with(bbox=rect, all_screens=True)
 
 
 @patch("src.card_name_ocr._get_pytesseract", return_value=None)
