@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import logging
 import logging.handlers
 
@@ -12,6 +13,11 @@ def _get_logger_base_dir():
             return os.path.expanduser("~/.config/MTGA_Draft_Tool")
         else:
             return os.path.dirname(sys.executable)
+    if "pytest" in sys.modules:
+        # Keep the real user-facing debug.log clean of test-run noise —
+        # otherwise diagnosing a real session gets mixed up with whatever
+        # the test suite happened to log (e.g. mocked exception reprs).
+        return os.path.join(tempfile.gettempdir(), "MTGA_Draft_Tool_test_logs")
     return os.getcwd()
 
 
