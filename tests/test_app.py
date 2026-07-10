@@ -59,6 +59,59 @@ class TestDraftApp:
                 app._disable_overlay()
             assert app.overlay_window is None
 
+    def test_arena_overlay_toggling_logic(self, root, mock_scanner):
+        """Verify the Arena overlay window is correctly spawned and destroyed."""
+        config = Configuration()
+        with patch("src.ui.app_layout.AppLayoutManager.build"):
+            app = DraftApp(root, mock_scanner, config)
+
+            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+                app._enable_arena_overlay()
+                mock_arena_overlay_cls.assert_called_once_with(app.root)
+                assert app.arena_overlay is not None
+
+                # Calling it again while already enabled must not spawn a second window.
+                app._enable_arena_overlay()
+                mock_arena_overlay_cls.assert_called_once()
+
+            app.arena_overlay.destroy = MagicMock()
+            app._disable_arena_overlay()
+            assert app.arena_overlay is None
+
+    def test_arena_overlay_enabled_setting_creates_overlay_on_startup(
+        self, root, mock_scanner
+    ):
+        """Verify a persisted arena_overlay_enabled=True setting spawns the overlay at launch."""
+        config = Configuration()
+        config.settings.arena_overlay_enabled = True
+        with patch("src.ui.app_layout.AppLayoutManager.build"):
+            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+                app = DraftApp(root, mock_scanner, config)
+
+                mock_arena_overlay_cls.assert_called_once_with(app.root)
+                assert app.arena_overlay is not None
+
+    def test_open_settings_toggles_arena_overlay(self, root, mock_scanner):
+        """Verify toggling arena_overlay_enabled via Settings enables/disables the overlay."""
+        config = Configuration()
+        with patch("src.ui.app_layout.AppLayoutManager.build"):
+            app = DraftApp(root, mock_scanner, config)
+
+            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+                with patch("src.ui.app.SettingsWindow") as mock_settings_cls:
+                    app._open_settings()
+                    on_settings_changed = mock_settings_cls.call_args.args[2]
+
+                    config.settings.arena_overlay_enabled = True
+                    on_settings_changed("arena_overlay_enabled")
+                    mock_arena_overlay_cls.assert_called_once_with(app.root)
+                    assert app.arena_overlay is not None
+
+                    app.arena_overlay.destroy = MagicMock()
+                    config.settings.arena_overlay_enabled = False
+                    on_settings_changed("arena_overlay_enabled")
+                    assert app.arena_overlay is None
+
     @patch("src.ui.menu_bar.filedialog.asksaveasfile")
     @patch("tkinter.messagebox.showinfo")
     def test_export_json_routing(self, mock_msg, mock_file, root, mock_scanner):
