@@ -7,7 +7,7 @@ from src.card_name_ocr import (
     NAME_REGION_HEIGHT_PCT,
     NAME_REGION_TOP_PCT,
     capture_region,
-    identify_card_at_slot,
+    identify_cards_in_pack,
     is_ocr_available,
     match_card_name,
     name_region_for_slot,
@@ -172,27 +172,141 @@ def test_match_card_name_returns_none_for_empty_input():
     assert match_card_name("Web Up", []) is None
 
 
-@patch("src.card_name_ocr.is_ocr_available", return_value=False)
-def test_identify_card_at_slot_returns_none_when_ocr_unavailable(mock_available):
-    result = identify_card_at_slot((0, 0, 200, 280), ["Web Up"])
+@patch("src.card_name_ocr._get_win32_capture_api", return_value=None)
+def test_capture_window_returns_none_when_api_unavailable(mock_api):
+    assert card_name_ocr.capture_window(123) is None
 
-    assert result is None
+
+@patch("src.card_name_ocr._get_win32_capture_api")
+def test_capture_window_returns_none_for_a_zero_size_window(mock_api):
+    win32gui, win32ui, ctypes = MagicMock(), MagicMock(), MagicMock()
+    win32gui.GetWindowRect.return_value = (100, 100, 100, 100)  # 0x0
+    mock_api.return_value = (win32gui, win32ui, ctypes)
+
+    assert card_name_ocr.capture_window(123) is None
+
+
+@patch("src.card_name_ocr._get_win32_capture_api")
+def test_capture_window_returns_none_when_printwindow_reports_failure(mock_api):
+    win32gui, win32ui, ctypes = MagicMock(), MagicMock(), MagicMock()
+    win32gui.GetWindowRect.return_value = (0, 0, 200, 280)
+    ctypes.windll.user32.PrintWindow.return_value = 0  # failure
+
+    bitmap = win32ui.CreateBitmap.return_value
+    bitmap.GetInfo.return_value = {"bmWidth": 200, "bmHeight": 280}
+    bitmap.GetBitmapBits.return_value = b"\x00" * (200 * 280 * 4)
+    mock_api.return_value = (win32gui, win32ui, ctypes)
+
+    assert card_name_ocr.capture_window(123) is None
+
+
+@patch("src.card_name_ocr._get_win32_capture_api")
+def test_capture_window_returns_image_on_success(mock_api):
+    win32gui, win32ui, ctypes = MagicMock(), MagicMock(), MagicMock()
+    win32gui.GetWindowRect.return_value = (0, 0, 200, 280)
+    ctypes.windll.user32.PrintWindow.return_value = 1  # success
+
+    bitmap = win32ui.CreateBitmap.return_value
+    bitmap.GetInfo.return_value = {"bmWidth": 200, "bmHeight": 280}
+    bitmap.GetBitmapBits.return_value = b"\x00" * (200 * 280 * 4)
+    mock_api.return_value = (win32gui, win32ui, ctypes)
+
+    image = card_name_ocr.capture_window(123)
+
+    assert image is not None
+    assert image.size == (200, 280)
+
+
+@patch("src.card_name_ocr._get_win32_capture_api")
+def test_capture_window_returns_none_on_unexpected_error(mock_api):
+    win32gui, win32ui, ctypes = MagicMock(), MagicMock(), MagicMock()
+    win32gui.GetWindowRect.side_effect = Exception("window closed mid-capture")
+    mock_api.return_value = (win32gui, win32ui, ctypes)
+
+    assert card_name_ocr.capture_window(123) is None
+
+
+@patch("src.card_name_ocr.is_ocr_available", return_value=False)
+def test_identify_cards_in_pack_returns_empty_when_ocr_unavailable(mock_available):
+    result = identify_cards_in_pack(123, (0, 0, 1920, 1080), [(0, 0, 200, 280)], ["Web Up"])
+
+    assert result == {}
+
+
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_crops_slots_from_one_window_capture(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    window_image = MagicMock()
+    mock_capture_window.return_value = window_image
+    mock_recognize.side_effect = ["Web Up text", "Hawkeye text"]
+    mock_match.side_effect = ["Web Up", "Hawkeye"]
+
+    arena_rect = (100, 50, 100 + 1920, 50 + 1080)
+    slots = [(200, 150, 400, 430), (500, 150, 700, 430)]
+
+    result = identify_cards_in_pack(999, arena_rect, slots, ["Web Up", "Hawkeye"])
+
+    mock_capture_window.assert_called_once_with(999)
+    assert window_image.crop.call_count == 2
+    assert result == {0: "Web Up", 1: "Hawkeye"}
 
 
 @patch("src.card_name_ocr.match_card_name")
 @patch("src.card_name_ocr.recognize_text")
 @patch("src.card_name_ocr.capture_region")
+@patch("src.card_name_ocr.capture_window", return_value=None)
 @patch("src.card_name_ocr.is_ocr_available", return_value=True)
-def test_identify_card_at_slot_wires_capture_recognize_and_match(
-    mock_available, mock_capture, mock_recognize, mock_match
+def test_identify_cards_in_pack_falls_back_to_screen_capture(
+    mock_available, mock_capture_window, mock_capture_region, mock_recognize, mock_match
 ):
-    mock_capture.return_value = "fake-image"
-    mock_recognize.return_value = "Web Up"
+    mock_recognize.return_value = "Web Up text"
     mock_match.return_value = "Web Up"
 
-    result = identify_card_at_slot((0, 0, 200, 280), ["Web Up", "Hawkeye"])
+    arena_rect = (0, 0, 1920, 1080)
+    slots = [(200, 150, 400, 430)]
 
-    mock_capture.assert_called_once_with(name_region_for_slot((0, 0, 200, 280)))
-    mock_recognize.assert_called_once_with("fake-image")
-    mock_match.assert_called_once_with("Web Up", ["Web Up", "Hawkeye"])
-    assert result == "Web Up"
+    result = identify_cards_in_pack(999, arena_rect, slots, ["Web Up"])
+
+    mock_capture_region.assert_called_once_with(name_region_for_slot(slots[0]))
+    assert result == {0: "Web Up"}
+
+
+@patch("src.card_name_ocr.match_card_name", return_value=None)
+@patch("src.card_name_ocr.recognize_text", return_value="")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_omits_unresolved_slots(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Web Up"]
+    )
+
+    assert result == {}
+
+
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text", return_value="text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_does_not_match_the_same_card_twice(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    # Both slots happen to read the same (mis-recognized) text; only the
+    # first slot should claim "Web Up" — the second must not double-claim it.
+    mock_match.side_effect = ["Web Up", None]
+
+    result = identify_cards_in_pack(
+        999,
+        (0, 0, 1920, 1080),
+        [(200, 150, 400, 430), (500, 150, 700, 430)],
+        ["Web Up"],
+    )
+
+    assert result == {0: "Web Up"}
+    # Second call's candidate list must have already excluded "Web Up".
+    assert mock_match.call_args_list[1].args[1] == []
