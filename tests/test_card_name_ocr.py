@@ -161,6 +161,16 @@ def test_match_card_name_finds_close_match_despite_ocr_noise():
     )
 
 
+def test_match_card_name_tolerates_heavier_real_world_ocr_noise():
+    """Calibrated against a real capture: 'Ant-Man's Arm � 2' still had to
+    match "Ant-Man's Army" despite the garbled trailing character and cost."""
+    candidates = ["Ant-Man's Army", "Web Up", "Giant-Sized Flying Ant"]
+
+    assert (
+        match_card_name("Ant-Man's Arm � 2", candidates) == "Ant-Man's Army"
+    )
+
+
 def test_match_card_name_returns_none_when_nothing_close_enough():
     candidates = ["Hawkeye, Master Marksman", "Web Up"]
 
