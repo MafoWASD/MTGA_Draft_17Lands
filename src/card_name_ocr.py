@@ -49,14 +49,24 @@ def _configure_tesseract_path(pytesseract):
     try:
         pytesseract.get_tesseract_version()
         return  # already resolvable via PATH
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(
+            "Bare 'tesseract' command not resolvable (%s: %s); "
+            "checking common install locations.",
+            type(e).__name__,
+            e,
+        )
 
     for path in COMMON_TESSERACT_PATHS:
         if os.path.isfile(path):
             pytesseract.pytesseract.tesseract_cmd = path
             logger.debug("Configured Tesseract binary path: %s", path)
             return
+
+    logger.debug(
+        "No Tesseract binary found at any common install location: %s",
+        COMMON_TESSERACT_PATHS,
+    )
 
 
 def _get_pytesseract():
@@ -90,10 +100,17 @@ def is_ocr_available() -> bool:
         return False
 
     try:
-        pytesseract.get_tesseract_version()
+        version = pytesseract.get_tesseract_version()
+        logger.info("Tesseract OCR binary found (version %s).", version)
         _tesseract_available = True
-    except Exception:
-        logger.debug("Tesseract OCR binary not found; card-name OCR disabled.")
+    except Exception as e:
+        logger.debug(
+            "Tesseract OCR binary not found; card-name OCR disabled. "
+            "Command in use: %r. Reason: %s: %s",
+            getattr(pytesseract.pytesseract, "tesseract_cmd", "tesseract"),
+            type(e).__name__,
+            e,
+        )
         _tesseract_available = False
 
     return _tesseract_available
