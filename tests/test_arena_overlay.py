@@ -1,3 +1,4 @@
+import sys
 import tkinter
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -42,6 +43,34 @@ def test_overlay_positions_itself_over_arena_rect(mock_ov, root):
 
     assert overlay.winfo_exists()
     assert overlay.geometry().startswith("1920x1080+10+20")
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_overlay_canvas_uses_a_near_black_transparent_key(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=None))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    # The exact resolved value can be quantized slightly by Tk/the system's
+    # color handling (see the exact-match test below), so just sanity-check
+    # it's a near-black color distinct from any badge color, not literally
+    # "#010101".
+    r, g, b = overlay.canvas.winfo_rgb(overlay.canvas.cget("bg"))
+    assert max(r, g, b) < 0x1000  # well below any badge color's brightness
+
+    overlay.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="-transparentcolor is Windows-only")
+@patch("tkinter.Toplevel.overrideredirect")
+def test_overlay_transparentcolor_matches_canvas_background_exactly(mock_ov, root):
+    """The wm colorkey and the canvas's actual painted color must match exactly,
+    or the colorkey punch-out won't line up with what's actually rendered."""
+    tracker = MagicMock(get_rect=MagicMock(return_value=None))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    assert overlay.attributes("-transparentcolor") == overlay.canvas.cget("bg")
 
     overlay.destroy()
 
