@@ -23,7 +23,11 @@ Rect = Tuple[int, int, int, int]  # (left, top, right, bottom) in screen pixels
 NAME_REGION_TOP_PCT = 0.02
 NAME_REGION_HEIGHT_PCT = 0.16
 
-FUZZY_MATCH_CUTOFF = 0.5
+# Calibrated against real captured text: a clean-ish read still scores ~0.85
+# (e.g. "Ant-Man's Arm � 2" vs "Ant-Man's Army"), so there's headroom to
+# accept noisier reads before risking cross-matching between the ~14 mostly
+# dissimilar card names in a pack.
+FUZZY_MATCH_CUTOFF = 0.4
 
 # The Windows Tesseract installer doesn't add itself to PATH by default, so
 # pytesseract's bare "tesseract" command often can't find it even when it's
