@@ -6,7 +6,8 @@ draft log's pack-card order doesn't match Arena's on-screen grid position.
 
 import difflib
 import os
-from typing import List, Optional, Tuple
+import sys
+from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageGrab
 
@@ -134,8 +135,88 @@ def capture_region(rect: Rect) -> Image.Image:
     capture — without it, ImageGrab only captures the primary display, so
     a rect on a secondary monitor silently grabs whatever's on the primary
     monitor at those coordinates instead (e.g. a different window entirely).
+    This is only a fallback for when capture_window() isn't usable — it's
+    still vulnerable to other windows overlapping Arena at those coordinates.
     """
     return ImageGrab.grab(bbox=rect, all_screens=True)
+
+
+# Asks the target window to render its actual current content (rather than
+# a generic WM_PRINT fallback), which is required for hardware-accelerated
+# apps like Arena (Unity/DirectX) — added in Windows 8.1.
+PW_RENDERFULLCONTENT = 2
+
+
+def _get_win32_capture_api():
+    """Lazily imports the win32 capture APIs, returning None on non-Windows platforms."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    import win32gui
+    import win32ui
+
+    return win32gui, win32ui, ctypes
+
+
+def capture_window(hwnd: int) -> Optional[Image.Image]:
+    """Captures a window's content directly via PrintWindow.
+
+    Unlike a screen-region grab, this reads the window's own rendered
+    content regardless of what else is on screen — immune to other windows
+    overlapping Arena and to multi-monitor coordinate mixups, since it
+    operates on the window handle rather than screen coordinates. Returns
+    None if window capture isn't supported here (caller should fall back to
+    capture_region).
+    """
+    api = _get_win32_capture_api()
+    if api is None:
+        return None
+    win32gui, win32ui, ctypes = api
+
+    try:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        width, height = right - left, bottom - top
+        if width <= 0 or height <= 0:
+            return None
+
+        window_dc = win32gui.GetWindowDC(hwnd)
+        mfc_dc = win32ui.CreateDCFromHandle(window_dc)
+        save_dc = mfc_dc.CreateCompatibleDC()
+
+        bitmap = win32ui.CreateBitmap()
+        bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+        save_dc.SelectObject(bitmap)
+
+        result = ctypes.windll.user32.PrintWindow(
+            hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT
+        )
+
+        bmp_info = bitmap.GetInfo()
+        bmp_bits = bitmap.GetBitmapBits(True)
+        image = Image.frombuffer(
+            "RGB",
+            (bmp_info["bmWidth"], bmp_info["bmHeight"]),
+            bmp_bits,
+            "raw",
+            "BGRX",
+            0,
+            1,
+        )
+
+        win32gui.DeleteObject(bitmap.GetHandle())
+        save_dc.DeleteDC()
+        mfc_dc.DeleteDC()
+        win32gui.ReleaseDC(hwnd, window_dc)
+
+        if not result:
+            logger.debug("PrintWindow reported failure for hwnd %s.", hwnd)
+            return None
+
+        return image
+    except Exception:
+        logger.debug("Window capture via PrintWindow failed.", exc_info=True)
+        return None
 
 
 def recognize_text(image: Image.Image) -> str:
@@ -170,26 +251,49 @@ def match_card_name(
     return matches[0] if matches else None
 
 
-def identify_card_at_slot(
-    slot_rect: Rect, candidate_names: List[str]
-) -> Optional[str]:
-    """Captures, OCRs, and fuzzy-matches the card name shown at a slot.
+def identify_cards_in_pack(
+    hwnd: Optional[int],
+    arena_rect: Rect,
+    slots: List[Rect],
+    candidate_names: List[str],
+) -> Dict[int, str]:
+    """Identifies which candidate card is shown at each slot, in one pass.
 
-    Returns the best-matching name from `candidate_names`, or None if OCR is
-    unavailable or nothing matched closely enough.
+    Captures the Arena window once via capture_window (immune to occluding
+    windows and multi-monitor coordinate issues) and crops each slot's name
+    region out of that single capture, falling back to a per-slot screen
+    grab only if window capture isn't usable. Returns a dict of slot index
+    -> matched card name, omitting slots OCR couldn't confidently read.
     """
     if not is_ocr_available():
-        return None
+        return {}
 
-    region = name_region_for_slot(slot_rect)
-    image = capture_region(region)
-    recognized_text = recognize_text(image)
-    matched = match_card_name(recognized_text, candidate_names)
-    logger.debug(
-        "OCR slot %s (crop %s): raw text %r -> matched %r",
-        slot_rect,
-        region,
-        recognized_text,
-        matched,
-    )
-    return matched
+    window_image = capture_window(hwnd) if hwnd is not None else None
+    origin_x, origin_y, _, _ = arena_rect
+
+    remaining_names = list(candidate_names)
+    resolved: Dict[int, str] = {}
+
+    for index, slot in enumerate(slots):
+        region = name_region_for_slot(slot)
+        if window_image is not None:
+            crop_box = (
+                region[0] - origin_x,
+                region[1] - origin_y,
+                region[2] - origin_x,
+                region[3] - origin_y,
+            )
+            image = window_image.crop(crop_box)
+        else:
+            image = capture_region(region)
+
+        recognized_text = recognize_text(image)
+        matched = match_card_name(recognized_text, remaining_names)
+        logger.debug(
+            "OCR slot %s: raw text %r -> matched %r", slot, recognized_text, matched
+        )
+        if matched is not None:
+            resolved[index] = matched
+            remaining_names.remove(matched)
+
+    return resolved
