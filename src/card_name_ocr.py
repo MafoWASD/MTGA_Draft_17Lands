@@ -128,8 +128,14 @@ def name_region_for_slot(slot_rect: Rect) -> Rect:
 
 
 def capture_region(rect: Rect) -> Image.Image:
-    """Grabs a screenshot of the given absolute screen rect."""
-    return ImageGrab.grab(bbox=rect)
+    """Grabs a screenshot of the given absolute screen rect.
+
+    all_screens=True is required on Windows for correct multi-monitor
+    capture — without it, ImageGrab only captures the primary display, so
+    a rect on a secondary monitor silently grabs whatever's on the primary
+    monitor at those coordinates instead (e.g. a different window entirely).
+    """
+    return ImageGrab.grab(bbox=rect, all_screens=True)
 
 
 def recognize_text(image: Image.Image) -> str:
