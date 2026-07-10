@@ -185,6 +185,45 @@ def test_update_data_maps_each_card_to_its_slot_rect(mock_ov, root):
 
 
 @patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_defaults_to_five_column_layout_without_configuration(mock_ov, root):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [{constants.DATA_FIELD_NAME: "Card A"}]
+    overlay.update_data(pack_cards, [_rec("Card A", 88)])
+
+    assert overlay.slot_data[0]["slot"] == slot_rect_for_index(
+        arena_rect, 0, 1, constants.PACK_LAYOUT_MODE_5_COLUMN
+    )
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_uses_configured_pack_layout_mode(mock_ov, root):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    configuration = SimpleNamespace(
+        settings=SimpleNamespace(pack_layout_mode=constants.PACK_LAYOUT_MODE_8_COLUMN)
+    )
+    overlay = ArenaOverlay(root, configuration=configuration, tracker=tracker)
+
+    pack_cards = [{constants.DATA_FIELD_NAME: "Card A"}]
+    overlay.update_data(pack_cards, [_rec("Card A", 88)])
+
+    assert overlay.slot_data[0]["slot"] == slot_rect_for_index(
+        arena_rect, 0, 1, constants.PACK_LAYOUT_MODE_8_COLUMN
+    )
+    # Sanity check it's not just falling back to the default profile.
+    assert overlay.slot_data[0]["slot"] != slot_rect_for_index(
+        arena_rect, 0, 1, constants.PACK_LAYOUT_MODE_5_COLUMN
+    )
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_handles_card_with_no_matching_recommendation(mock_ov, root):
     tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
     overlay = ArenaOverlay(root, tracker=tracker)

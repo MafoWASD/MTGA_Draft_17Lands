@@ -238,7 +238,10 @@ class DraftApp:
                 )
             if key in ["filter_format"] or key is None:
                 self.top_bar.update_deck_filter_options()
-            if key in ["result_format", "card_colors_enabled"] or key is None:
+            if (
+                key in ["result_format", "card_colors_enabled", "pack_layout_mode"]
+                or key is None
+            ):
                 self._refresh_ui_data()
             if (
                 key == "arena_log_location"
@@ -267,7 +270,7 @@ class DraftApp:
     def _enable_arena_overlay(self):
         if self.arena_overlay:
             return
-        self.arena_overlay = ArenaOverlay(self.root)
+        self.arena_overlay = ArenaOverlay(self.root, self.configuration)
 
     def _disable_arena_overlay(self):
         if self.arena_overlay:

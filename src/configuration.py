@@ -82,6 +82,7 @@ class Settings(BaseModel):
     deck_filter: str = constants.DECK_FILTER_DEFAULT
     filter_format: str = constants.DECK_FILTER_FORMAT_COLORS
     result_format: str = constants.RESULT_FORMAT_WIN_RATE
+    pack_layout_mode: str = constants.PACK_LAYOUT_MODE_5_COLUMN
     ui_size: str = constants.UI_SIZE_DEFAULT
     theme: str = "Dark"
     theme_base: str = "clam"  # aqua, vista, clam, etc.
