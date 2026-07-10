@@ -110,8 +110,8 @@ def test_update_data_maps_each_card_to_its_slot_rect(mock_ov, root):
         {constants.DATA_FIELD_NAME: "Card B"},
     ]
     recommendations = [
-        SimpleNamespace(card_name="Card A", contextual_score=88),
-        SimpleNamespace(card_name="Card B", contextual_score=42),
+        SimpleNamespace(card_name="Card A", contextual_score=88, is_elite=False),
+        SimpleNamespace(card_name="Card B", contextual_score=42, is_elite=False),
     ]
 
     overlay.update_data(pack_cards, recommendations)
@@ -158,9 +158,75 @@ def test_update_data_clears_slots_when_arena_not_found(mock_ov, root):
 
     overlay.update_data(
         [{constants.DATA_FIELD_NAME: "Card A"}],
-        [SimpleNamespace(card_name="Card A", contextual_score=88)],
+        [SimpleNamespace(card_name="Card A", contextual_score=88, is_elite=False)],
     )
 
     assert overlay.slot_data == []
 
     overlay.destroy()
+
+
+def _rec(name, score, is_elite=False):
+    return SimpleNamespace(card_name=name, contextual_score=score, is_elite=is_elite)
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_render_badges_draws_one_badge_per_rated_card(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [
+        {constants.DATA_FIELD_NAME: "Card A"},
+        {constants.DATA_FIELD_NAME: "Card B"},
+    ]
+    overlay.update_data(
+        pack_cards, [_rec("Card A", 88), _rec("Card B", 42)]
+    )
+
+    # Each badge is a circle + a text label, both tagged "badge".
+    assert len(overlay.canvas.find_withtag("badge")) == 4
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_render_badges_skips_cards_without_a_recommendation(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data([{constants.DATA_FIELD_NAME: "Unrated"}], [])
+
+    assert overlay.canvas.find_withtag("badge") == ()
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_render_badges_clears_previous_badges_on_refresh(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}], [_rec("Card A", 88)]
+    )
+    assert len(overlay.canvas.find_withtag("badge")) == 2
+
+    overlay.update_data([], [])
+    assert overlay.canvas.find_withtag("badge") == ()
+
+    overlay.destroy()
+
+
+@pytest.mark.parametrize(
+    "recommendation,expected_colors",
+    [
+        (_rec("Bomb", 95, is_elite=True), ("#78350f", "#fde047")),
+        (_rec("Strong", 80), ("#7f1d1d", "#fecaca")),
+        (_rec("Good", 60), ("#0c4a6e", "#e0f2fe")),
+        (_rec("Marginal", 20), ("#374151", "#d1d5db")),
+    ],
+)
+def test_badge_colors_for_recommendation_tiers(recommendation, expected_colors):
+    from src.ui.windows.arena_overlay import badge_colors_for_recommendation
+
+    assert badge_colors_for_recommendation(recommendation) == expected_colors
