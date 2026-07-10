@@ -265,6 +265,22 @@ def test_update_data_clears_slots_when_pack_is_empty(mock_ov, root):
     overlay.destroy()
 
 
+@patch("src.ui.windows.arena_overlay.logger")
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_logs_no_pack_state_once(mock_ov, mock_logger, root):
+    """A quiet log entry when there's genuinely nothing to show yet, not spammed every tick."""
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+    mock_logger.reset_mock()  # drop any logging from __init__/_sync_position
+
+    overlay.update_data([], [])
+    overlay.update_data([], [])
+
+    mock_logger.debug.assert_called_once()
+
+    overlay.destroy()
+
+
 @patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_clears_slots_when_arena_not_found(mock_ov, root):
     tracker = MagicMock(get_rect=MagicMock(return_value=None))
