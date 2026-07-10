@@ -17,11 +17,13 @@ logger = create_logger()
 
 Rect = Tuple[int, int, int, int]  # (left, top, right, bottom) in screen pixels
 
-# The card name sits in a banner near the top of the card art, not the full
-# card. Cropping tightly to it (rather than OCR'ing the whole card) avoids
-# reading art/rules text and keeps recognition fast.
-NAME_REGION_TOP_PCT = 0.02
-NAME_REGION_HEIGHT_PCT = 0.16
+# The card name sits in a thin banner right at the top of the card art, not
+# the full card. Cropping tightly to it (rather than the whole card) avoids
+# reading art/borders bleeding into the OCR pass, which hurts recognition
+# more than it helps — shrunk from an earlier, looser 0.16 after real
+# captures showed noise from below the name banner.
+NAME_REGION_TOP_PCT = 0.015
+NAME_REGION_HEIGHT_PCT = 0.11
 
 # Calibrated against real captured text: a clean-ish read still scores ~0.85
 # (e.g. "Ant-Man's Arm � 2" vs "Ant-Man's Army"), so there's headroom to
