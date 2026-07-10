@@ -5,6 +5,7 @@ draft log's pack-card order doesn't match Arena's on-screen grid position.
 """
 
 import difflib
+import os
 from typing import List, Optional, Tuple
 
 from PIL import Image, ImageGrab
@@ -23,15 +24,53 @@ NAME_REGION_HEIGHT_PCT = 0.16
 
 FUZZY_MATCH_CUTOFF = 0.5
 
+# The Windows Tesseract installer doesn't add itself to PATH by default, so
+# pytesseract's bare "tesseract" command often can't find it even when it's
+# installed. Fall back to the installer's default locations.
+COMMON_TESSERACT_PATHS = [
+    os.path.join(
+        os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+        "Tesseract-OCR",
+        "tesseract.exe",
+    ),
+    os.path.join(
+        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+        "Tesseract-OCR",
+        "tesseract.exe",
+    ),
+]
+
 _tesseract_available: Optional[bool] = None
+_path_configured = False
+
+
+def _configure_tesseract_path(pytesseract):
+    """Points pytesseract at a known install location if the bare command isn't found."""
+    try:
+        pytesseract.get_tesseract_version()
+        return  # already resolvable via PATH
+    except Exception:
+        pass
+
+    for path in COMMON_TESSERACT_PATHS:
+        if os.path.isfile(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            logger.debug("Configured Tesseract binary path: %s", path)
+            return
 
 
 def _get_pytesseract():
     """Lazily imports pytesseract, returning None if it's not installed."""
+    global _path_configured
     try:
         import pytesseract
     except ImportError:
         return None
+
+    if not _path_configured:
+        _configure_tesseract_path(pytesseract)
+        _path_configured = True
+
     return pytesseract
 
 

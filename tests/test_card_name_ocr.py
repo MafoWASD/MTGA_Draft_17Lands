@@ -18,10 +18,12 @@ import src.card_name_ocr as card_name_ocr
 
 @pytest.fixture(autouse=True)
 def reset_ocr_availability_cache():
-    """is_ocr_available() caches its result globally; keep tests independent."""
+    """is_ocr_available() and the resolved binary path cache globally; keep tests independent."""
     card_name_ocr._tesseract_available = None
+    card_name_ocr._path_configured = False
     yield
     card_name_ocr._tesseract_available = None
+    card_name_ocr._path_configured = False
 
 
 def test_name_region_for_slot_is_a_thin_band_near_the_top():
@@ -34,6 +36,45 @@ def test_name_region_for_slot_is_a_thin_band_near_the_top():
     assert top == 200 + round(280 * NAME_REGION_TOP_PCT)
     assert bottom == top + round(280 * NAME_REGION_HEIGHT_PCT)
     assert bottom < 480  # stays within the card, doesn't cover the art
+
+
+def test_configure_tesseract_path_skips_when_already_on_path():
+    pytesseract = MagicMock()
+    pytesseract.get_tesseract_version.return_value = "5.3.0"
+
+    card_name_ocr._configure_tesseract_path(pytesseract)
+
+    pytesseract.get_tesseract_version.assert_called_once()
+
+
+@patch("src.card_name_ocr.os.path.isfile")
+def test_configure_tesseract_path_falls_back_to_common_install_location(mock_isfile):
+    pytesseract = MagicMock()
+    pytesseract.get_tesseract_version.side_effect = Exception("not on PATH")
+    expected_path = card_name_ocr.COMMON_TESSERACT_PATHS[0]
+    mock_isfile.side_effect = lambda p: p == expected_path
+
+    card_name_ocr._configure_tesseract_path(pytesseract)
+
+    assert pytesseract.pytesseract.tesseract_cmd == expected_path
+
+
+@patch("src.card_name_ocr.os.path.isfile", return_value=False)
+def test_configure_tesseract_path_gives_up_when_no_common_location_exists(mock_isfile):
+    pytesseract = MagicMock()
+    pytesseract.get_tesseract_version.side_effect = Exception("not on PATH")
+
+    card_name_ocr._configure_tesseract_path(pytesseract)
+
+    assert pytesseract.pytesseract.tesseract_cmd not in card_name_ocr.COMMON_TESSERACT_PATHS
+
+
+@patch("src.card_name_ocr._configure_tesseract_path")
+def test_get_pytesseract_configures_path_only_once(mock_configure):
+    card_name_ocr._get_pytesseract()
+    card_name_ocr._get_pytesseract()
+
+    mock_configure.assert_called_once()
 
 
 @patch("src.card_name_ocr._get_pytesseract", return_value=None)
