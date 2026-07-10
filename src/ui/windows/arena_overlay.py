@@ -153,9 +153,9 @@ class ArenaOverlay(tb.Toplevel):
             if recommendation is None:
                 continue
 
-            left, top, right, _bottom = entry["slot"]
+            left, top, right, bottom = entry["slot"]
             cx = (left + right) / 2 - origin_x
-            cy = top - origin_y
+            cy = bottom - origin_y - 2 * BADGE_RADIUS
 
             bg, fg = badge_colors_for_recommendation(recommendation)
             self.canvas.create_oval(
