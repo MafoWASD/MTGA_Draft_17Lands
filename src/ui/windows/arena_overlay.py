@@ -7,7 +7,9 @@ import sys
 
 import ttkbootstrap as tb
 
+from src import constants
 from src.arena_window import ArenaWindowTracker
+from src.overlay_layout import slot_rect_for_index
 from src.logger import create_logger
 
 logger = create_logger()
@@ -45,10 +47,37 @@ class ArenaOverlay(tb.Toplevel):
         except Exception:
             pass
 
+        self.slot_data = []
+
         self.withdraw()
         self.update_idletasks()
         self._enable_click_through()
         self._sync_position()
+
+    def update_data(self, pack_cards, recommendations):
+        """Maps the current pack's cards to their on-screen slot rects.
+
+        Stores a list of {"card", "slot", "recommendation"} entries for the
+        renderer to consume; rendering itself is added in a later task.
+        """
+        rect = self.tracker.get_rect()
+        if rect is None or not pack_cards:
+            self.slot_data = []
+            return
+
+        rec_by_name = {r.card_name: r for r in (recommendations or [])}
+        pack_size = len(pack_cards)
+
+        self.slot_data = [
+            {
+                "card": card,
+                "slot": slot_rect_for_index(rect, index, pack_size),
+                "recommendation": rec_by_name.get(
+                    card.get(constants.DATA_FIELD_NAME)
+                ),
+            }
+            for index, card in enumerate(pack_cards)
+        ]
 
     def _enable_click_through(self):
         api = _get_win32_extended_style_api()
