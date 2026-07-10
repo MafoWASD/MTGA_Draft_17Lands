@@ -142,6 +142,19 @@ def test_recognize_text_strips_and_returns_ocr_output(mock_get):
 
 
 @patch("src.card_name_ocr._get_pytesseract")
+def test_recognize_text_collapses_a_name_wrapped_across_lines(mock_get):
+    """--psm 6 can return a wrapped name as multiple lines; those must
+    collapse into one space-separated string for fuzzy matching to work."""
+    pytesseract = MagicMock()
+    pytesseract.image_to_string.return_value = "Wonder Man,\nHollywood Hero\n"
+    mock_get.return_value = pytesseract
+
+    image = Image.new("RGB", (100, 30))
+
+    assert recognize_text(image) == "Wonder Man, Hollywood Hero"
+
+
+@patch("src.card_name_ocr._get_pytesseract")
 def test_recognize_text_returns_empty_string_on_ocr_failure(mock_get):
     pytesseract = MagicMock()
     pytesseract.image_to_string.side_effect = Exception("ocr engine crashed")
