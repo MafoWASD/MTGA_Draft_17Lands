@@ -4,6 +4,7 @@ Transparent overlay window kept in sync with the MTG Arena game window.
 """
 
 import sys
+import tkinter
 
 import ttkbootstrap as tb
 
@@ -15,6 +16,30 @@ from src.logger import create_logger
 logger = create_logger()
 
 POLL_INTERVAL_MS = 250
+
+BADGE_RADIUS = 18
+BADGE_FONT = ("Segoe UI", 11, "bold")
+
+# Tier colors mirror the elite_bomb/high_fit row-highlight palette already
+# used in src/ui/components.py, extended with the missing tiers.
+BADGE_COLORS_BOMB = ("#78350f", "#fde047")  # flame, for is_elite cards
+BADGE_COLORS_STRONG = ("#7f1d1d", "#fecaca")  # red
+BADGE_COLORS_GOOD = ("#0c4a6e", "#e0f2fe")  # blue, matches high_fit
+BADGE_COLORS_MARGINAL = ("#374151", "#d1d5db")  # grey
+
+BADGE_TIER_STRONG_THRESHOLD = 75
+BADGE_TIER_GOOD_THRESHOLD = 50
+
+
+def badge_colors_for_recommendation(recommendation):
+    """Returns (background, foreground) hex colors for a card's VALUE badge."""
+    if recommendation.is_elite:
+        return BADGE_COLORS_BOMB
+    if recommendation.contextual_score >= BADGE_TIER_STRONG_THRESHOLD:
+        return BADGE_COLORS_STRONG
+    if recommendation.contextual_score >= BADGE_TIER_GOOD_THRESHOLD:
+        return BADGE_COLORS_GOOD
+    return BADGE_COLORS_MARGINAL
 
 
 def _get_win32_extended_style_api():
@@ -48,6 +73,10 @@ class ArenaOverlay(tb.Toplevel):
             pass
 
         self.slot_data = []
+        self._last_rect = None
+
+        self.canvas = tkinter.Canvas(self, bg="black", highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True)
 
         self.withdraw()
         self.update_idletasks()
@@ -55,19 +84,18 @@ class ArenaOverlay(tb.Toplevel):
         self._sync_position()
 
     def update_data(self, pack_cards, recommendations):
-        """Maps the current pack's cards to their on-screen slot rects.
-
-        Stores a list of {"card", "slot", "recommendation"} entries for the
-        renderer to consume; rendering itself is added in a later task.
-        """
+        """Maps the current pack's cards to their on-screen slot rects and redraws badges."""
         rect = self.tracker.get_rect()
         if rect is None or not pack_cards:
             self.slot_data = []
+            self._last_rect = None
+            self._render_badges()
             return
 
         rec_by_name = {r.card_name: r for r in (recommendations or [])}
         pack_size = len(pack_cards)
 
+        self._last_rect = rect
         self.slot_data = [
             {
                 "card": card,
@@ -78,6 +106,43 @@ class ArenaOverlay(tb.Toplevel):
             }
             for index, card in enumerate(pack_cards)
         ]
+        self._render_badges()
+
+    def _render_badges(self):
+        """Draws a VALUE score badge for each pack card that has a recommendation."""
+        self.canvas.delete("badge")
+        if not self.slot_data or self._last_rect is None:
+            return
+
+        origin_x, origin_y, _, _ = self._last_rect
+        for entry in self.slot_data:
+            recommendation = entry["recommendation"]
+            if recommendation is None:
+                continue
+
+            left, top, right, _bottom = entry["slot"]
+            cx = (left + right) / 2 - origin_x
+            cy = top - origin_y
+
+            bg, fg = badge_colors_for_recommendation(recommendation)
+            self.canvas.create_oval(
+                cx - BADGE_RADIUS,
+                cy,
+                cx + BADGE_RADIUS,
+                cy + 2 * BADGE_RADIUS,
+                fill=bg,
+                outline=fg,
+                width=2,
+                tags="badge",
+            )
+            self.canvas.create_text(
+                cx,
+                cy + BADGE_RADIUS,
+                text=str(round(recommendation.contextual_score)),
+                fill=fg,
+                font=BADGE_FONT,
+                tags="badge",
+            )
 
     def _enable_click_through(self):
         api = _get_win32_extended_style_api()
