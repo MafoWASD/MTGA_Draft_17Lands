@@ -310,7 +310,7 @@ class _SynchronousThread:
 
 
 @patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
-@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
 @patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
 @patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_uses_ocr_to_resolve_true_slot_positions(
@@ -327,7 +327,7 @@ def test_update_data_uses_ocr_to_resolve_true_slot_positions(
     ]
     # OCR reports slot 0 actually shows "Card B" on screen, slot 1 shows
     # "Card A" — the reverse of the log's raw list order.
-    mock_identify.side_effect = ["Card B", "Card A"]
+    mock_identify.return_value = {0: "Card B", 1: "Card A"}
 
     overlay.update_data(pack_cards, [_rec("Card A", 88), _rec("Card B", 42)])
     overlay._drain_ocr_results()
@@ -340,7 +340,7 @@ def test_update_data_uses_ocr_to_resolve_true_slot_positions(
 
 
 @patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
-@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
 @patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
 @patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_skips_slots_ocr_could_not_identify(
@@ -354,7 +354,7 @@ def test_update_data_skips_slots_ocr_could_not_identify(
         {constants.DATA_FIELD_NAME: "Card A"},
         {constants.DATA_FIELD_NAME: "Card B"},
     ]
-    mock_identify.side_effect = ["Card A", None]  # slot 1 unrecognized
+    mock_identify.return_value = {0: "Card A"}  # slot 1 unrecognized
 
     overlay.update_data(pack_cards, [_rec("Card A", 88), _rec("Card B", 42)])
     overlay._drain_ocr_results()
@@ -366,7 +366,7 @@ def test_update_data_skips_slots_ocr_could_not_identify(
 
 
 @patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
-@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
 @patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
 @patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_does_not_rerun_ocr_for_the_same_pack(
@@ -377,7 +377,7 @@ def test_update_data_does_not_rerun_ocr_for_the_same_pack(
     overlay = ArenaOverlay(root, tracker=tracker)
 
     pack_cards = [{constants.DATA_FIELD_NAME: "Card A"}]
-    mock_identify.side_effect = ["Card A", "Card A"]
+    mock_identify.return_value = {0: "Card A"}
 
     overlay.update_data(pack_cards, [_rec("Card A", 88)])
     overlay._drain_ocr_results()
@@ -394,7 +394,7 @@ def test_update_data_does_not_rerun_ocr_for_the_same_pack(
 
 
 @patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
-@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
 @patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
 @patch("tkinter.Toplevel.overrideredirect")
 def test_update_data_discards_stale_ocr_result_for_a_replaced_pack(
@@ -404,7 +404,7 @@ def test_update_data_discards_stale_ocr_result_for_a_replaced_pack(
     tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
     overlay = ArenaOverlay(root, tracker=tracker)
 
-    mock_identify.side_effect = ["Old Card", "New Card"]
+    mock_identify.side_effect = [{0: "Old Card"}, {0: "New Card"}]
 
     overlay.update_data(
         [{constants.DATA_FIELD_NAME: "Old Card"}], [_rec("Old Card", 50)]
