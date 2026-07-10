@@ -23,6 +23,7 @@ from src.ui.menu_bar import AppMenuBar
 from src.ui.top_bar import TopBarControls
 from src.ui.card_interactions import CardInteractionManager
 from src.ui.windows.overlay import CompactOverlay
+from src.ui.windows.arena_overlay import ArenaOverlay
 from src.ui.windows.settings import SettingsWindow
 
 # Delegated Managers
@@ -46,6 +47,7 @@ class DraftApp:
         self.vars: Dict[str, tkinter.Variable] = {}
         self.deck_filter_map: Dict[str, str] = {}
         self.overlay_window: Optional[CompactOverlay] = None
+        self.arena_overlay: Optional[ArenaOverlay] = None
 
         self._initialized = False
         self._rebuilding_ui = False
@@ -109,6 +111,9 @@ class DraftApp:
         self.orchestrator.scanner.log_enable(
             self.configuration.settings.draft_log_enabled
         )
+
+        if self.configuration.settings.arena_overlay_enabled:
+            self._enable_arena_overlay()
 
         self._loading = True
         self._initialized = True
@@ -250,9 +255,24 @@ class DraftApp:
                 self.orchestrator.scanner.set_data.unknown_id_cache.clear()
                 self.orchestrator.request_math_update()
                 self._refresh_ui_data()
+            if key == "arena_overlay_enabled":
+                if s.arena_overlay_enabled:
+                    self._enable_arena_overlay()
+                else:
+                    self._disable_arena_overlay()
 
         parent_window = self.overlay_window if self.overlay_window else self.root
         SettingsWindow(parent_window, self.configuration, _on_settings_changed)
+
+    def _enable_arena_overlay(self):
+        if self.arena_overlay:
+            return
+        self.arena_overlay = ArenaOverlay(self.root)
+
+    def _disable_arena_overlay(self):
+        if self.arena_overlay:
+            self.arena_overlay.destroy()
+            self.arena_overlay = None
 
     def _enable_overlay(self):
         if self.overlay_window:
