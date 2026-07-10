@@ -91,6 +91,7 @@ class ArenaOverlay(tb.Toplevel):
         self._resolved_card_by_slot = {}
         self._last_recommendations = None
         self._was_visible = False
+        self._logged_no_pack = False
         self._ocr_result_queue = queue.Queue()
 
         self.canvas = tkinter.Canvas(
@@ -131,6 +132,13 @@ class ArenaOverlay(tb.Toplevel):
         """
         rect = self.tracker.get_rect()
         if rect is None or not pack_cards:
+            if not self._logged_no_pack:
+                logger.debug(
+                    "No pack to show yet (arena_rect=%s, pack_cards=%d cards).",
+                    rect,
+                    len(pack_cards or []),
+                )
+                self._logged_no_pack = True
             self.slot_data = []
             self._last_rect = None
             self._pending_pack_key = None
@@ -139,6 +147,7 @@ class ArenaOverlay(tb.Toplevel):
             self._render_badges()
             return
 
+        self._logged_no_pack = False
         self._last_rect = rect
         self._last_recommendations = recommendations
         pack_size = len(pack_cards)
