@@ -1,30 +1,32 @@
 """
 src/overlay_layout.py
-Maps MTG Arena's draft pack card layout to on-screen slot rectangles.
+Maps MTG Arena's draft pack card grid layout to on-screen slot rectangles.
 """
 
 from typing import List, Tuple
 
 Rect = Tuple[int, int, int, int]  # (left, top, right, bottom) in screen pixels
 
-# Percentage offsets, relative to the Arena window's client rect, bounding the
-# horizontal band where pack cards are laid out during a draft pick. These are
-# eyeballed against Arena's draft screen and will need calibration against a
-# real Arena window (see ArenaOverlay's debug outline from Task 2).
-PACK_AREA_LEFT_PCT = 0.06
-PACK_AREA_RIGHT_PCT = 0.94
-PACK_AREA_TOP_PCT = 0.30
-PACK_AREA_BOTTOM_PCT = 0.72
+# Percentage offsets, relative to the Arena window's client rect, calibrated
+# from a real Pack 1 Pick 1 screenshot (14 cards, wrapped 5-5-4 into rows of
+# up to MAX_COLUMNS_PER_ROW). Arena lays pack cards out in a fixed-size grid
+# that wraps to new rows — it does NOT stretch every card into a single row.
+GRID_LEFT_PCT = 0.144
+GRID_TOP_PCT = 0.178
+COLUMN_PITCH_PCT = 0.102  # horizontal distance between successive card left-edges
+ROW_PITCH_PCT = 0.246  # vertical distance between successive card top-edges
+CARD_WIDTH_PCT = 0.088  # fixed card width, independent of pack_size
 
 CARD_ASPECT_RATIO = 5.0 / 7.0  # width / height, standard MTG card proportions
-CARD_GAP_PCT = 0.01  # gap between adjacent cards, as a fraction of Arena's width
+MAX_COLUMNS_PER_ROW = 5
 
 
 def slot_rect_for_index(arena_rect: Rect, index: int, pack_size: int) -> Rect:
     """Returns the on-screen rect for the card at `index` within a pack of `pack_size` cards.
 
-    `index` is 0-based, left to right. Coordinates are absolute screen pixels,
-    in the same space as `arena_rect`.
+    `index` is 0-based. Cards wrap into rows of up to MAX_COLUMNS_PER_ROW,
+    left to right then top to bottom, matching Arena's draft pack grid.
+    Coordinates are absolute screen pixels, in the same space as `arena_rect`.
     """
     if pack_size <= 0:
         raise ValueError("pack_size must be positive")
@@ -35,23 +37,20 @@ def slot_rect_for_index(arena_rect: Rect, index: int, pack_size: int) -> Rect:
     width = right - left
     height = bottom - top
 
-    area_left = left + width * PACK_AREA_LEFT_PCT
-    area_top = top + height * PACK_AREA_TOP_PCT
-    area_width = width * (PACK_AREA_RIGHT_PCT - PACK_AREA_LEFT_PCT)
-    area_height = height * (PACK_AREA_BOTTOM_PCT - PACK_AREA_TOP_PCT)
+    columns = min(pack_size, MAX_COLUMNS_PER_ROW)
+    row, col = divmod(index, columns)
 
-    gap = width * CARD_GAP_PCT
-    slot_width = (area_width - gap * (pack_size - 1)) / pack_size
-    slot_height = min(area_height, slot_width / CARD_ASPECT_RATIO)
+    card_width = width * CARD_WIDTH_PCT
+    card_height = card_width / CARD_ASPECT_RATIO
 
-    slot_left = area_left + index * (slot_width + gap)
-    slot_top = area_top + (area_height - slot_height) / 2
+    slot_left = left + width * GRID_LEFT_PCT + col * width * COLUMN_PITCH_PCT
+    slot_top = top + height * GRID_TOP_PCT + row * height * ROW_PITCH_PCT
 
     return (
         round(slot_left),
         round(slot_top),
-        round(slot_left + slot_width),
-        round(slot_top + slot_height),
+        round(slot_left + card_width),
+        round(slot_top + card_height),
     )
 
 
