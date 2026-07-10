@@ -203,15 +203,15 @@ class ArenaOverlay(tb.Toplevel):
             card.get(constants.DATA_FIELD_NAME): card for card in pack_cards
         }
         slots = all_slot_rects(rect, pack_size, layout_mode)
+        hwnd = self.tracker.find_window()
 
         def worker():
-            remaining_names = list(cards_by_name.keys())
-            card_by_slot_index = {}
-            for index, slot in enumerate(slots):
-                name = card_name_ocr.identify_card_at_slot(slot, remaining_names)
-                if name is not None:
-                    card_by_slot_index[index] = cards_by_name[name]
-                    remaining_names.remove(name)
+            resolved_names = card_name_ocr.identify_cards_in_pack(
+                hwnd, rect, slots, list(cards_by_name.keys())
+            )
+            card_by_slot_index = {
+                index: cards_by_name[name] for index, name in resolved_names.items()
+            }
             logger.info(
                 "OCR resolved %d/%d pack card positions.",
                 len(card_by_slot_index),
