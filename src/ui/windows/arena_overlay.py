@@ -30,6 +30,14 @@ BADGE_COLORS_MARGINAL = ("#374151", "#d1d5db")  # grey
 BADGE_TIER_STRONG_THRESHOLD = 75
 BADGE_TIER_GOOD_THRESHOLD = 50
 
+GIHWR_BADGE_WIDTH = 46
+GIHWR_BADGE_HEIGHT = 20
+GIHWR_BADGE_MARGIN = 4
+GIHWR_BADGE_COLOR_BG = "#166534"  # green
+GIHWR_BADGE_COLOR_FG = "#dcfce7"
+GIHWR_BADGE_FONT = ("Segoe UI", 9, "bold")
+GIHWR_ARROW = "↑"
+
 
 def badge_colors_for_recommendation(recommendation):
     """Returns (background, foreground) hex colors for a card's VALUE badge."""
@@ -109,7 +117,7 @@ class ArenaOverlay(tb.Toplevel):
         self._render_badges()
 
     def _render_badges(self):
-        """Draws a VALUE score badge for each pack card that has a recommendation."""
+        """Draws VALUE and GIHWR badges for each pack card that has a recommendation."""
         self.canvas.delete("badge")
         if not self.slot_data or self._last_rect is None:
             return
@@ -143,6 +151,34 @@ class ArenaOverlay(tb.Toplevel):
                 font=BADGE_FONT,
                 tags="badge",
             )
+
+            self._render_gihwr_badge(recommendation, left - origin_x, top - origin_y)
+
+    def _render_gihwr_badge(self, recommendation, slot_left, slot_top):
+        """Draws the green GIHWR% badge in the top-left corner of a card slot."""
+        if recommendation.base_win_rate <= 0:
+            return
+
+        badge_left = slot_left + GIHWR_BADGE_MARGIN
+        badge_top = slot_top + GIHWR_BADGE_MARGIN
+        self.canvas.create_rectangle(
+            badge_left,
+            badge_top,
+            badge_left + GIHWR_BADGE_WIDTH,
+            badge_top + GIHWR_BADGE_HEIGHT,
+            fill=GIHWR_BADGE_COLOR_BG,
+            outline=GIHWR_BADGE_COLOR_FG,
+            width=1,
+            tags="badge",
+        )
+        self.canvas.create_text(
+            badge_left + GIHWR_BADGE_WIDTH / 2,
+            badge_top + GIHWR_BADGE_HEIGHT / 2,
+            text=f"{GIHWR_ARROW} {recommendation.base_win_rate:.0f}%",
+            fill=GIHWR_BADGE_COLOR_FG,
+            font=GIHWR_BADGE_FONT,
+            tags="badge",
+        )
 
     def _enable_click_through(self):
         api = _get_win32_extended_style_api()
