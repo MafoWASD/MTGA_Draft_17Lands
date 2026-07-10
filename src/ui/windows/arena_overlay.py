@@ -206,8 +206,9 @@ class ArenaOverlay(tb.Toplevel):
         hwnd = self.tracker.find_window()
 
         def worker():
+            raw_log_order = list(cards_by_name.keys())
             resolved_names = card_name_ocr.identify_cards_in_pack(
-                hwnd, rect, slots, list(cards_by_name.keys())
+                hwnd, rect, slots, raw_log_order
             )
             card_by_slot_index = {
                 index: cards_by_name[name] for index, name in resolved_names.items()
@@ -217,6 +218,23 @@ class ArenaOverlay(tb.Toplevel):
                 len(card_by_slot_index),
                 len(slots),
             )
+
+            # Diagnostic only: checks whether the raw log's card order already
+            # matches OCR's on-screen order, so we can tell whether OCR is
+            # only needed for the first reveal of a pack or for every pick.
+            agreements = sum(
+                1
+                for index, name in resolved_names.items()
+                if index < len(raw_log_order) and raw_log_order[index] == name
+            )
+            logger.info(
+                "Raw log order agrees with OCR on %d/%d resolved slots "
+                "(pack_size=%d).",
+                agreements,
+                len(resolved_names),
+                pack_size,
+            )
+
             self._ocr_result_queue.put((pack_key, slots, card_by_slot_index))
 
         threading.Thread(target=worker, daemon=True).start()
