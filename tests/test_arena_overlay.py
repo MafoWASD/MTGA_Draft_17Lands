@@ -1,8 +1,11 @@
 import tkinter
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import constants
+from src.overlay_layout import slot_rect_for_index
 from src.ui.windows.arena_overlay import ArenaOverlay
 from src.ui.styles import Theme
 
@@ -92,5 +95,72 @@ def test_click_through_is_a_no_op_off_windows(mock_ov, mock_api, root):
     overlay = ArenaOverlay(root, tracker=tracker)
 
     assert overlay.winfo_exists()
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_maps_each_card_to_its_slot_rect(mock_ov, root):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [
+        {constants.DATA_FIELD_NAME: "Card A"},
+        {constants.DATA_FIELD_NAME: "Card B"},
+    ]
+    recommendations = [
+        SimpleNamespace(card_name="Card A", contextual_score=88),
+        SimpleNamespace(card_name="Card B", contextual_score=42),
+    ]
+
+    overlay.update_data(pack_cards, recommendations)
+
+    assert len(overlay.slot_data) == 2
+    for index, entry in enumerate(overlay.slot_data):
+        assert entry["card"] == pack_cards[index]
+        assert entry["slot"] == slot_rect_for_index(arena_rect, index, 2)
+        assert entry["recommendation"] == recommendations[index]
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_handles_card_with_no_matching_recommendation(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [{constants.DATA_FIELD_NAME: "Unrated Card"}]
+
+    overlay.update_data(pack_cards, [])
+
+    assert overlay.slot_data[0]["recommendation"] is None
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_clears_slots_when_pack_is_empty(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=(0, 0, 1920, 1080)))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data([], [])
+
+    assert overlay.slot_data == []
+
+    overlay.destroy()
+
+
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_clears_slots_when_arena_not_found(mock_ov, root):
+    tracker = MagicMock(get_rect=MagicMock(return_value=None))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}],
+        [SimpleNamespace(card_name="Card A", contextual_score=88)],
+    )
+
+    assert overlay.slot_data == []
 
     overlay.destroy()
