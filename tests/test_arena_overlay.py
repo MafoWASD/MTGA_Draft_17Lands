@@ -88,14 +88,30 @@ def test_destroy_cancels_pending_poll(mock_ov, root):
 @patch("tkinter.Toplevel.overrideredirect")
 def test_click_through_applies_layered_and_transparent_styles(mock_ov, mock_api, root):
     win32gui = MagicMock()
-    win32con = MagicMock(GWL_EXSTYLE=1, WS_EX_LAYERED=0b01, WS_EX_TRANSPARENT=0b10)
+    win32con = MagicMock(
+        GWL_EXSTYLE=1,
+        WS_EX_LAYERED=0b01,
+        WS_EX_TRANSPARENT=0b10,
+        SWP_NOMOVE=0b001,
+        SWP_NOSIZE=0b010,
+        SWP_NOZORDER=0b100,
+        SWP_FRAMECHANGED=0b1000,
+    )
     win32gui.GetWindowLong.return_value = 0b100
+    fake_top_level_hwnd = 999
+    win32gui.GetParent.return_value = fake_top_level_hwnd
     mock_api.return_value = (win32gui, win32con)
 
     overlay = ArenaOverlay(root, tracker=MagicMock(get_rect=MagicMock(return_value=None)))
 
+    # The style must be applied to the real top-level HWND (GetParent), not
+    # winfo_id()'s inner content-window handle, or clicks stay blocked.
+    win32gui.GetParent.assert_called_once_with(overlay.winfo_id())
     win32gui.SetWindowLong.assert_called_once_with(
-        overlay.winfo_id(), win32con.GWL_EXSTYLE, 0b111
+        fake_top_level_hwnd, win32con.GWL_EXSTYLE, 0b111
+    )
+    win32gui.SetWindowPos.assert_called_once_with(
+        fake_top_level_hwnd, 0, 0, 0, 0, 0, 0b1111
     )
 
     overlay.destroy()

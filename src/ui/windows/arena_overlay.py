@@ -186,12 +186,28 @@ class ArenaOverlay(tb.Toplevel):
             return
 
         win32gui, win32con = api
-        hwnd = self.winfo_id()
+        # winfo_id() returns Tk's inner content-window handle. The actual
+        # top-level HWND that Windows uses for mouse hit-testing is its
+        # parent; setting the extended styles on the wrong handle leaves
+        # clicks blocked even though the style bits appear to be set.
+        hwnd = win32gui.GetParent(self.winfo_id())
         styles = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
         win32gui.SetWindowLong(
             hwnd,
             win32con.GWL_EXSTYLE,
             styles | win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT,
+        )
+        win32gui.SetWindowPos(
+            hwnd,
+            0,
+            0,
+            0,
+            0,
+            0,
+            win32con.SWP_NOMOVE
+            | win32con.SWP_NOSIZE
+            | win32con.SWP_NOZORDER
+            | win32con.SWP_FRAMECHANGED,
         )
 
     def _sync_position(self):
