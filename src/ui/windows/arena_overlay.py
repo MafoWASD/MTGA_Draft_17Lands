@@ -3,14 +3,16 @@ src/ui/windows/arena_overlay.py
 Transparent overlay window kept in sync with the MTG Arena game window.
 """
 
+import queue
 import sys
+import threading
 import tkinter
 
 import ttkbootstrap as tb
 
-from src import constants
+from src import card_name_ocr, constants
 from src.arena_window import ArenaWindowTracker
-from src.overlay_layout import DEFAULT_LAYOUT_MODE, slot_rect_for_index
+from src.overlay_layout import DEFAULT_LAYOUT_MODE, all_slot_rects, slot_rect_for_index
 from src.logger import create_logger
 
 logger = create_logger()
@@ -84,6 +86,11 @@ class ArenaOverlay(tb.Toplevel):
 
         self.slot_data = []
         self._last_rect = None
+        self._pending_pack_key = None
+        self._resolved_pack_key = None
+        self._resolved_card_by_slot = {}
+        self._last_recommendations = None
+        self._ocr_result_queue = queue.Queue()
 
         self.canvas = tkinter.Canvas(
             self, bg=TRANSPARENT_COLOR_KEY, highlightthickness=0, bd=0
@@ -112,23 +119,58 @@ class ArenaOverlay(tb.Toplevel):
         self._sync_position()
 
     def update_data(self, pack_cards, recommendations):
-        """Maps the current pack's cards to their on-screen slot rects and redraws badges."""
+        """Maps the current pack's cards to their on-screen slot rects and redraws badges.
+
+        The draft log's pack-card order does not reliably match Arena's
+        on-screen grid order (there's no positional field in the log data),
+        so when OCR is available we identify each slot's card by reading its
+        name off the live screen instead of trusting list order. That's a
+        per-pack, screen-capture-and-OCR pass, so it runs once per distinct
+        pack in a background thread rather than on every refresh tick.
+        """
         rect = self.tracker.get_rect()
         if rect is None or not pack_cards:
             self.slot_data = []
             self._last_rect = None
+            self._pending_pack_key = None
+            self._resolved_pack_key = None
+            self._resolved_card_by_slot = {}
             self._render_badges()
             return
 
-        rec_by_name = {r.card_name: r for r in (recommendations or [])}
+        self._last_rect = rect
+        self._last_recommendations = recommendations
         pack_size = len(pack_cards)
         layout_mode = getattr(
             getattr(self.configuration, "settings", None),
             "pack_layout_mode",
             DEFAULT_LAYOUT_MODE,
         )
+        pack_key = tuple(card.get(constants.DATA_FIELD_NAME) for card in pack_cards)
 
-        self._last_rect = rect
+        if not card_name_ocr.is_ocr_available():
+            self._apply_index_based_mapping(
+                rect, pack_cards, recommendations, pack_size, layout_mode
+            )
+            return
+
+        if pack_key == self._resolved_pack_key:
+            self._apply_resolved_mapping(recommendations)
+            return
+
+        if pack_key != self._pending_pack_key:
+            self._pending_pack_key = pack_key
+            self._start_ocr_resolution(
+                rect, pack_cards, pack_key, pack_size, layout_mode
+            )
+        # else: identical pack to one already being resolved — nothing new to do
+        # until the background pass reports back via _sync_position's drain.
+
+    def _apply_index_based_mapping(
+        self, rect, pack_cards, recommendations, pack_size, layout_mode
+    ):
+        """Falls back to raw log order when OCR isn't available (Tesseract not installed)."""
+        rec_by_name = {r.card_name: r for r in (recommendations or [])}
         self.slot_data = [
             {
                 "card": card,
@@ -138,6 +180,60 @@ class ArenaOverlay(tb.Toplevel):
                 ),
             }
             for index, card in enumerate(pack_cards)
+        ]
+        self._render_badges()
+
+    def _start_ocr_resolution(self, rect, pack_cards, pack_key, pack_size, layout_mode):
+        """Kicks off a background pass identifying which card is in each slot via OCR."""
+        cards_by_name = {
+            card.get(constants.DATA_FIELD_NAME): card for card in pack_cards
+        }
+        slots = all_slot_rects(rect, pack_size, layout_mode)
+
+        def worker():
+            remaining_names = list(cards_by_name.keys())
+            card_by_slot_index = {}
+            for index, slot in enumerate(slots):
+                name = card_name_ocr.identify_card_at_slot(slot, remaining_names)
+                if name is not None:
+                    card_by_slot_index[index] = cards_by_name[name]
+                    remaining_names.remove(name)
+            self._ocr_result_queue.put((pack_key, slots, card_by_slot_index))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _drain_ocr_results(self):
+        """Applies any completed background OCR pass, run on the Tk main thread."""
+        resolved_something = False
+        try:
+            while True:
+                pack_key, slots, card_by_slot_index = self._ocr_result_queue.get_nowait()
+                if pack_key != self._pending_pack_key:
+                    continue  # stale result for a pack we've since moved past
+                self._resolved_pack_key = pack_key
+                self._resolved_card_by_slot = {
+                    index: {"card": card, "slot": slots[index]}
+                    for index, card in card_by_slot_index.items()
+                }
+                resolved_something = True
+        except queue.Empty:
+            pass
+
+        if resolved_something:
+            self._apply_resolved_mapping(self._last_recommendations)
+
+    def _apply_resolved_mapping(self, recommendations):
+        """Rebuilds slot_data from a cached OCR resolution plus fresh recommendations."""
+        rec_by_name = {r.card_name: r for r in (recommendations or [])}
+        self.slot_data = [
+            {
+                "card": entry["card"],
+                "slot": entry["slot"],
+                "recommendation": rec_by_name.get(
+                    entry["card"].get(constants.DATA_FIELD_NAME)
+                ),
+            }
+            for entry in self._resolved_card_by_slot.values()
         ]
         self._render_badges()
 
@@ -236,6 +332,8 @@ class ArenaOverlay(tb.Toplevel):
         )
 
     def _sync_position(self):
+        self._drain_ocr_results()
+
         rect = self.tracker.get_rect()
         if rect is None:
             self.withdraw()
