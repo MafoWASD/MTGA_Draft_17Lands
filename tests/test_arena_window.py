@@ -138,6 +138,45 @@ def test_is_foreground_false_when_arena_not_found(mock_get_win32gui):
     assert tracker.is_foreground() is False
 
 
+@patch("src.arena_window.logger")
+@patch("src.arena_window._get_win32gui")
+def test_find_window_logs_visible_titles_once_when_not_found(
+    mock_get_win32gui, mock_logger
+):
+    win32gui = _mock_win32gui([(1, "Notepad", True), (2, "MTG Arena Client", True)])
+    mock_get_win32gui.return_value = win32gui
+
+    tracker = ArenaWindowTracker()
+    tracker.find_window()
+    tracker.find_window()
+
+    mock_logger.debug.assert_called_once()
+    logged_titles = mock_logger.debug.call_args.args[1]
+    assert logged_titles == ["Notepad", "MTG Arena Client"]
+
+
+@patch("src.arena_window.logger")
+@patch("src.arena_window._get_win32gui")
+def test_find_window_logs_recovery_after_being_lost(mock_get_win32gui, mock_logger):
+    win32gui = _mock_win32gui([])
+    mock_get_win32gui.return_value = win32gui
+
+    tracker = ArenaWindowTracker()
+    tracker.find_window()
+    mock_logger.debug.assert_called_once()
+
+    # Arena appears on the next poll.
+    win32gui.EnumWindows.side_effect = lambda callback, extra: callback(42, extra)
+    win32gui.IsWindowVisible.side_effect = None
+    win32gui.IsWindowVisible.return_value = True
+    win32gui.GetWindowText.side_effect = None
+    win32gui.GetWindowText.return_value = "MTGA"
+
+    tracker.find_window()
+
+    mock_logger.info.assert_called_once_with("Arena window found (title match).")
+
+
 def test_no_win32gui_available_returns_none_gracefully():
     """On a real non-Windows platform (no mocking), the tracker should no-op cleanly."""
     with patch("src.arena_window._get_win32gui", return_value=None):

@@ -90,6 +90,7 @@ class ArenaOverlay(tb.Toplevel):
         self._resolved_pack_key = None
         self._resolved_card_by_slot = {}
         self._last_recommendations = None
+        self._was_visible = False
         self._ocr_result_queue = queue.Queue()
 
         self.canvas = tkinter.Canvas(
@@ -149,6 +150,10 @@ class ArenaOverlay(tb.Toplevel):
         pack_key = tuple(card.get(constants.DATA_FIELD_NAME) for card in pack_cards)
 
         if not card_name_ocr.is_ocr_available():
+            logger.debug(
+                "OCR unavailable (Tesseract not installed); using raw log order "
+                "for badge positions."
+            )
             self._apply_index_based_mapping(
                 rect, pack_cards, recommendations, pack_size, layout_mode
             )
@@ -198,6 +203,11 @@ class ArenaOverlay(tb.Toplevel):
                 if name is not None:
                     card_by_slot_index[index] = cards_by_name[name]
                     remaining_names.remove(name)
+            logger.info(
+                "OCR resolved %d/%d pack card positions.",
+                len(card_by_slot_index),
+                len(slots),
+            )
             self._ocr_result_queue.put((pack_key, slots, card_by_slot_index))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -336,11 +346,19 @@ class ArenaOverlay(tb.Toplevel):
 
         rect = self.tracker.get_rect()
         if rect is None:
+            if self._was_visible:
+                logger.debug("Arena window lost; hiding overlay.")
+            self._was_visible = False
             self.withdraw()
         else:
             left, top, right, bottom = rect
             self.geometry(f"{right - left}x{bottom - top}+{left}+{top}")
             self.deiconify()
+            if not self._was_visible:
+                logger.info(
+                    "Overlay positioned over Arena at %s.", (left, top, right, bottom)
+                )
+            self._was_visible = True
 
         self._poll_job = self.after(POLL_INTERVAL_MS, self._sync_position)
 

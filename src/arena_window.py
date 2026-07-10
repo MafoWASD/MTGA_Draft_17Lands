@@ -29,6 +29,7 @@ class ArenaWindowTracker:
     def __init__(self, window_titles: Tuple[str, ...] = ARENA_WINDOW_TITLES):
         self.window_titles = window_titles
         self._hwnd: Optional[int] = None
+        self._logged_not_found = False
 
     def find_window(self) -> Optional[int]:
         """Returns the cached Arena window handle, re-scanning if it's stale."""
@@ -40,15 +41,35 @@ class ArenaWindowTracker:
             return self._hwnd
 
         found = []
+        visible_titles = []
 
         def _enum_handler(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(
-                hwnd
-            ) in self.window_titles:
+            if not win32gui.IsWindowVisible(hwnd):
+                return
+            title = win32gui.GetWindowText(hwnd)
+            if not title:
+                return
+            visible_titles.append(title)
+            if title in self.window_titles:
                 found.append(hwnd)
 
         win32gui.EnumWindows(_enum_handler, None)
         self._hwnd = found[0] if found else None
+
+        if self._hwnd is not None:
+            if self._logged_not_found:
+                logger.info("Arena window found (title match).")
+            self._logged_not_found = False
+        elif not self._logged_not_found:
+            # Log once per not-found streak (not every 250ms poll) so the
+            # user can see what window titles ARE visible if "MTGA"/"MTG
+            # Arena" isn't matching their actual client window.
+            logger.debug(
+                "Arena window not found among visible windows: %s",
+                visible_titles,
+            )
+            self._logged_not_found = True
+
         return self._hwnd
 
     def get_rect(self) -> Optional[Tuple[int, int, int, int]]:
