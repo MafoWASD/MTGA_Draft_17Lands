@@ -178,4 +178,12 @@ def identify_card_at_slot(
     region = name_region_for_slot(slot_rect)
     image = capture_region(region)
     recognized_text = recognize_text(image)
-    return match_card_name(recognized_text, candidate_names)
+    matched = match_card_name(recognized_text, candidate_names)
+    logger.debug(
+        "OCR slot %s (crop %s): raw text %r -> matched %r",
+        slot_rect,
+        region,
+        recognized_text,
+        matched,
+    )
+    return matched
