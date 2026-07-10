@@ -10,7 +10,7 @@ import ttkbootstrap as tb
 
 from src import constants
 from src.arena_window import ArenaWindowTracker
-from src.overlay_layout import slot_rect_for_index
+from src.overlay_layout import DEFAULT_LAYOUT_MODE, slot_rect_for_index
 from src.logger import create_logger
 
 logger = create_logger()
@@ -73,9 +73,10 @@ class ArenaOverlay(tb.Toplevel):
     so clicks always reach the Arena window underneath.
     """
 
-    def __init__(self, parent, tracker=None):
+    def __init__(self, parent, configuration=None, tracker=None):
         super().__init__(title="Arena Overlay", topmost=True)
         self.parent = parent
+        self.configuration = configuration
         self.tracker = tracker or ArenaWindowTracker()
         self._poll_job = None
 
@@ -121,12 +122,17 @@ class ArenaOverlay(tb.Toplevel):
 
         rec_by_name = {r.card_name: r for r in (recommendations or [])}
         pack_size = len(pack_cards)
+        layout_mode = getattr(
+            getattr(self.configuration, "settings", None),
+            "pack_layout_mode",
+            DEFAULT_LAYOUT_MODE,
+        )
 
         self._last_rect = rect
         self.slot_data = [
             {
                 "card": card,
-                "slot": slot_rect_for_index(rect, index, pack_size),
+                "slot": slot_rect_for_index(rect, index, pack_size, layout_mode),
                 "recommendation": rec_by_name.get(
                     card.get(constants.DATA_FIELD_NAME)
                 ),
