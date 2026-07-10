@@ -9,7 +9,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
-from PIL import Image, ImageGrab
+from PIL import Image, ImageGrab, ImageOps
 
 from src.logger import create_logger
 
@@ -236,9 +236,16 @@ def recognize_text(image: Image.Image) -> str:
     if pytesseract is None:
         return ""
 
-    # Upscaling + grayscale noticeably improves accuracy on small title text.
+    # Grayscale + contrast stretch + upscale noticeably improves accuracy on
+    # small title text — card name banners vary a lot in color (each card
+    # color has its own frame/background), so autocontrast matters more than
+    # a fixed threshold would: it adapts per-image instead of assuming a
+    # fixed dark-on-light or light-on-dark polarity.
     prepared = image.convert("L")
-    prepared = prepared.resize((prepared.width * 2, prepared.height * 2))
+    prepared = ImageOps.autocontrast(prepared)
+    prepared = prepared.resize(
+        (prepared.width * 2, prepared.height * 2), Image.LANCZOS
+    )
 
     try:
         text = pytesseract.image_to_string(prepared, config="--psm 7")
