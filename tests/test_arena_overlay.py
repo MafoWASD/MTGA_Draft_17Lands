@@ -24,6 +24,22 @@ def root():
     r.destroy()
 
 
+@pytest.fixture(autouse=True)
+def ocr_unavailable_by_default():
+    """Most tests exercise the synchronous, index-based fallback path.
+
+    Without this, is_ocr_available()'s real check (and its module-level
+    cache) would make these tests depend on whether Tesseract happens to be
+    installed on whatever machine runs the suite. Tests that specifically
+    want OCR-available behavior override this patch themselves.
+    """
+    with patch(
+        "src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available",
+        return_value=False,
+    ):
+        yield
+
+
 def _rec(name, score, is_elite=False, base_win_rate=0.0):
     return SimpleNamespace(
         card_name=name,
@@ -260,6 +276,131 @@ def test_update_data_clears_slots_when_arena_not_found(mock_ov, root):
     )
 
     assert overlay.slot_data == []
+
+    overlay.destroy()
+
+
+class _SynchronousThread:
+    """Stand-in for threading.Thread that runs its target immediately.
+
+    Keeps OCR-path tests deterministic instead of racing a real thread.
+    """
+
+    def __init__(self, target, daemon=None):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_uses_ocr_to_resolve_true_slot_positions(
+    mock_ov, mock_available, mock_identify, root
+):
+    """OCR corrects the log's raw order, which doesn't match Arena's on-screen grid."""
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [
+        {constants.DATA_FIELD_NAME: "Card A"},
+        {constants.DATA_FIELD_NAME: "Card B"},
+    ]
+    # OCR reports slot 0 actually shows "Card B" on screen, slot 1 shows
+    # "Card A" — the reverse of the log's raw list order.
+    mock_identify.side_effect = ["Card B", "Card A"]
+
+    overlay.update_data(pack_cards, [_rec("Card A", 88), _rec("Card B", 42)])
+    overlay._drain_ocr_results()
+
+    assert len(overlay.slot_data) == 2
+    assert overlay.slot_data[0]["card"][constants.DATA_FIELD_NAME] == "Card B"
+    assert overlay.slot_data[1]["card"][constants.DATA_FIELD_NAME] == "Card A"
+
+    overlay.destroy()
+
+
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_skips_slots_ocr_could_not_identify(
+    mock_ov, mock_available, mock_identify, root
+):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [
+        {constants.DATA_FIELD_NAME: "Card A"},
+        {constants.DATA_FIELD_NAME: "Card B"},
+    ]
+    mock_identify.side_effect = ["Card A", None]  # slot 1 unrecognized
+
+    overlay.update_data(pack_cards, [_rec("Card A", 88), _rec("Card B", 42)])
+    overlay._drain_ocr_results()
+
+    assert len(overlay.slot_data) == 1
+    assert overlay.slot_data[0]["card"][constants.DATA_FIELD_NAME] == "Card A"
+
+    overlay.destroy()
+
+
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_does_not_rerun_ocr_for_the_same_pack(
+    mock_ov, mock_available, mock_identify, root
+):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    pack_cards = [{constants.DATA_FIELD_NAME: "Card A"}]
+    mock_identify.side_effect = ["Card A", "Card A"]
+
+    overlay.update_data(pack_cards, [_rec("Card A", 88)])
+    overlay._drain_ocr_results()
+    assert mock_identify.call_count == 1
+
+    # Same pack again (e.g. a routine refresh tick with no pick made yet).
+    overlay.update_data(pack_cards, [_rec("Card A", 91)])
+    overlay._drain_ocr_results()
+
+    assert mock_identify.call_count == 1  # no second OCR pass
+    assert overlay.slot_data[0]["recommendation"].contextual_score == 91
+
+    overlay.destroy()
+
+
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_card_at_slot")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_update_data_discards_stale_ocr_result_for_a_replaced_pack(
+    mock_ov, mock_available, mock_identify, root
+):
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    mock_identify.side_effect = ["Old Card", "New Card"]
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Old Card"}], [_rec("Old Card", 50)]
+    )
+    # Before draining, the pack moves on to the next pick.
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "New Card"}], [_rec("New Card", 77)]
+    )
+    overlay._drain_ocr_results()
+
+    assert len(overlay.slot_data) == 1
+    assert overlay.slot_data[0]["card"][constants.DATA_FIELD_NAME] == "New Card"
 
     overlay.destroy()
 
