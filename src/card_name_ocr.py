@@ -240,20 +240,27 @@ def recognize_text(image: Image.Image) -> str:
     # small title text — card name banners vary a lot in color (each card
     # color has its own frame/background), so autocontrast matters more than
     # a fixed threshold would: it adapts per-image instead of assuming a
-    # fixed dark-on-light or light-on-dark polarity.
+    # fixed dark-on-light or light-on-dark polarity. 3x (not 2x) because
+    # Tesseract's accuracy on small captured game text scales with how large
+    # the text ends up, well past what 2x gave it to work with.
     prepared = image.convert("L")
     prepared = ImageOps.autocontrast(prepared)
     prepared = prepared.resize(
-        (prepared.width * 2, prepared.height * 2), Image.LANCZOS
+        (prepared.width * 3, prepared.height * 3), Image.LANCZOS
     )
 
     try:
-        text = pytesseract.image_to_string(prepared, config="--psm 7")
+        # --psm 6 (uniform block of text) rather than 7 (a single line):
+        # a card name that wraps to two lines makes psm 7's single-line
+        # assumption fail outright instead of just reading it noisily.
+        text = pytesseract.image_to_string(prepared, config="--psm 6")
     except Exception:
         logger.debug("OCR recognition failed", exc_info=True)
         return ""
 
-    return text.strip()
+    # Collapse a name that wrapped across lines (psm 6 preserves the
+    # linebreak) into one space-separated line for matching.
+    return " ".join(text.split())
 
 
 def match_card_name(
