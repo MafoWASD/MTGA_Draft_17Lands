@@ -23,8 +23,10 @@ POLL_INTERVAL_MS = 250
 # Arena appears to animate a newly-revealed pack's cards in (observed: OCR
 # reliably read row 1 but consistently failed on rows 2-3 of the same pack,
 # consistent with lower rows still being mid-animation when captured too
-# soon). Give the reveal time to settle before capturing.
-PACK_REVEAL_SETTLE_DELAY_SEC = 0.5
+# soon). Give the reveal time to settle before capturing. Bumped from an
+# initial 0.5s — that already fixed most of the pack, but a few cards were
+# still occasionally missed, suggesting some animations take a bit longer.
+PACK_REVEAL_SETTLE_DELAY_SEC = 1.0
 
 # Windows-only colorkey: pixels of this exact color are made fully invisible
 # and click-through by wm "-transparentcolor", instead of dimming the whole
