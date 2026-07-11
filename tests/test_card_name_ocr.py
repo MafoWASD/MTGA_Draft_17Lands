@@ -6,6 +6,8 @@ from PIL import Image
 from src.card_name_ocr import (
     NAME_REGION_HEIGHT_PCT,
     NAME_REGION_TOP_PCT,
+    WIDE_NAME_REGION_HEIGHT_PCT,
+    WIDE_NAME_REGION_TOP_PCT,
     capture_region,
     identify_cards_in_pack,
     is_ocr_available,
@@ -333,8 +335,9 @@ def test_identify_cards_in_pack_does_not_match_the_same_card_twice(
     mock_available, mock_capture_window, mock_recognize, mock_match
 ):
     # Both slots happen to read the same (mis-recognized) text; only the
-    # first slot should claim "Web Up" — the second must not double-claim it.
-    mock_match.side_effect = ["Web Up", None]
+    # first slot should claim "Web Up" — the second must not double-claim it,
+    # including on its wide-crop retry (the third call).
+    mock_match.side_effect = ["Web Up", None, None]
 
     result = identify_cards_in_pack(
         999,
@@ -346,3 +349,53 @@ def test_identify_cards_in_pack_does_not_match_the_same_card_twice(
     assert result == {0: "Web Up"}
     # Second call's candidate list must have already excluded "Web Up".
     assert mock_match.call_args_list[1].args[1] == []
+
+
+def test_name_region_for_slot_accepts_custom_percentages():
+    slot = (100, 200, 300, 480)  # 200x280 card
+
+    left, top, right, bottom = name_region_for_slot(
+        slot, WIDE_NAME_REGION_TOP_PCT, WIDE_NAME_REGION_HEIGHT_PCT
+    )
+
+    assert left == 100
+    assert right == 300
+    assert top == 200 + round(280 * WIDE_NAME_REGION_TOP_PCT)
+    assert bottom == top + round(280 * WIDE_NAME_REGION_HEIGHT_PCT)
+
+
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_retries_unresolved_slots_with_a_wider_crop(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    """A slot the tight crop can't read (e.g. a basic land's simpler frame)
+    gets a second attempt with a taller, looser crop before giving up."""
+    window_image = MagicMock()
+    mock_capture_window.return_value = window_image
+    mock_recognize.side_effect = ["", "Mountain text"]  # tight crop, then wide
+    mock_match.side_effect = [None, "Mountain"]  # tight crop fails, wide matches
+
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Mountain"]
+    )
+
+    assert result == {0: "Mountain"}
+    # Cropped twice: once for the tight region, once for the wide retry.
+    assert window_image.crop.call_count == 2
+
+
+@patch("src.card_name_ocr.match_card_name", return_value=None)
+@patch("src.card_name_ocr.recognize_text", return_value="")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_still_omits_slots_unresolved_after_retry(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Web Up"]
+    )
+
+    assert result == {}
