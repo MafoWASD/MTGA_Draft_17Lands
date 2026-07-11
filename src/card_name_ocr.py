@@ -25,6 +25,12 @@ Rect = Tuple[int, int, int, int]  # (left, top, right, bottom) in screen pixels
 NAME_REGION_TOP_PCT = 0.015
 NAME_REGION_HEIGHT_PCT = 0.11
 
+# Fallback crop for a retry pass on slots the tight crop above couldn't
+# read — taller and starting right at the card's edge, for card types whose
+# name sits in a slightly different spot (e.g. basic lands' simpler frame).
+WIDE_NAME_REGION_TOP_PCT = 0.0
+WIDE_NAME_REGION_HEIGHT_PCT = 0.20
+
 # Calibrated against real captured text: a clean-ish read still scores ~0.85
 # (e.g. "Ant-Man's Arm � 2" vs "Ant-Man's Army"), so there's headroom to
 # accept noisier reads before risking cross-matching between the ~14 mostly
@@ -128,13 +134,17 @@ def is_ocr_available() -> bool:
     return _tesseract_available
 
 
-def name_region_for_slot(slot_rect: Rect) -> Rect:
+def name_region_for_slot(
+    slot_rect: Rect,
+    top_pct: float = NAME_REGION_TOP_PCT,
+    height_pct: float = NAME_REGION_HEIGHT_PCT,
+) -> Rect:
     """Returns the crop region for a card's name banner within its slot rect."""
     left, top, right, bottom = slot_rect
     height = bottom - top
 
-    region_top = top + round(height * NAME_REGION_TOP_PCT)
-    region_bottom = region_top + round(height * NAME_REGION_HEIGHT_PCT)
+    region_top = top + round(height * top_pct)
+    region_bottom = region_top + round(height * height_pct)
 
     return (left, region_top, right, region_bottom)
 
@@ -283,19 +293,44 @@ def match_card_name(
     return matches[0] if matches else None
 
 
+def _crop_slot_region(
+    slot: Rect,
+    window_image: Optional[Image.Image],
+    origin_x: int,
+    origin_y: int,
+    top_pct: float,
+    height_pct: float,
+) -> Image.Image:
+    """Crops a slot's name region out of the full window capture (or grabs
+    it directly from the screen if window capture wasn't available)."""
+    region = name_region_for_slot(slot, top_pct, height_pct)
+    if window_image is not None:
+        crop_box = (
+            region[0] - origin_x,
+            region[1] - origin_y,
+            region[2] - origin_x,
+            region[3] - origin_y,
+        )
+        return window_image.crop(crop_box)
+    return capture_region(region)
+
+
 def identify_cards_in_pack(
     hwnd: Optional[int],
     arena_rect: Rect,
     slots: List[Rect],
     candidate_names: List[str],
 ) -> Dict[int, str]:
-    """Identifies which candidate card is shown at each slot, in one pass.
+    """Identifies which candidate card is shown at each slot.
 
     Captures the Arena window once via capture_window (immune to occluding
     windows and multi-monitor coordinate issues) and crops each slot's name
     region out of that single capture, falling back to a per-slot screen
-    grab only if window capture isn't usable. Returns a dict of slot index
-    -> matched card name, omitting slots OCR couldn't confidently read.
+    grab only if window capture isn't usable. Slots the tight crop couldn't
+    read get a second attempt with a taller, looser crop (e.g. basic lands
+    and other non-standard frames sometimes place the name slightly
+    differently). Returns a dict of slot index -> matched card name,
+    omitting slots OCR still couldn't confidently read after both passes.
     """
     if not is_ocr_available():
         return {}
@@ -305,24 +340,45 @@ def identify_cards_in_pack(
 
     remaining_names = list(candidate_names)
     resolved: Dict[int, str] = {}
+    unresolved_indices = []
 
     for index, slot in enumerate(slots):
-        region = name_region_for_slot(slot)
-        if window_image is not None:
-            crop_box = (
-                region[0] - origin_x,
-                region[1] - origin_y,
-                region[2] - origin_x,
-                region[3] - origin_y,
-            )
-            image = window_image.crop(crop_box)
-        else:
-            image = capture_region(region)
-
+        image = _crop_slot_region(
+            slot,
+            window_image,
+            origin_x,
+            origin_y,
+            NAME_REGION_TOP_PCT,
+            NAME_REGION_HEIGHT_PCT,
+        )
         recognized_text = recognize_text(image)
         matched = match_card_name(recognized_text, remaining_names)
         logger.debug(
             "OCR slot %s: raw text %r -> matched %r", slot, recognized_text, matched
+        )
+        if matched is not None:
+            resolved[index] = matched
+            remaining_names.remove(matched)
+        else:
+            unresolved_indices.append(index)
+
+    for index in unresolved_indices:
+        slot = slots[index]
+        image = _crop_slot_region(
+            slot,
+            window_image,
+            origin_x,
+            origin_y,
+            WIDE_NAME_REGION_TOP_PCT,
+            WIDE_NAME_REGION_HEIGHT_PCT,
+        )
+        recognized_text = recognize_text(image)
+        matched = match_card_name(recognized_text, remaining_names)
+        logger.debug(
+            "OCR slot %s retry (wide crop): raw text %r -> matched %r",
+            slot,
+            recognized_text,
+            matched,
         )
         if matched is not None:
             resolved[index] = matched
