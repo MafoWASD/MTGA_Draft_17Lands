@@ -430,6 +430,54 @@ def test_identify_cards_in_pack_still_omits_slots_unresolved_after_retry(
     assert result == {}
 
 
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_retries_with_psm3_after_wide_crop_fails(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    """Real capture: a clean name banner read as near-empty text under the
+    default psm 6 (small flanking icons confused its uniform-block
+    assumption) but came through correctly under psm 3 (full automatic
+    page segmentation) at the same 3x scale, reusing the tight crop."""
+    window_image = MagicMock()
+    mock_capture_window.return_value = window_image
+    mock_recognize.side_effect = ["", "", "Madame Masque banner text"]
+    mock_match.side_effect = [None, None, "Madame Masque"]
+
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Madame Masque"]
+    )
+
+    assert result == {0: "Madame Masque"}
+    # psm 3 retry reuses the cached tight crop — no extra window crop.
+    assert window_image.crop.call_count == 2
+    assert mock_recognize.call_args_list[2].kwargs == {"psm": 3, "scale": 3}
+
+
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_retries_psm3_at_a_larger_scale_if_needed(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    """Real capture: one name banner only came through under psm 3 at 4x —
+    3x still returned nothing for it."""
+    window_image = MagicMock()
+    mock_capture_window.return_value = window_image
+    mock_recognize.side_effect = ["", "", "", "Hire a Crew banner text"]
+    mock_match.side_effect = [None, None, None, "Hire a Crew"]
+
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Hire a Crew"]
+    )
+
+    assert result == {0: "Hire a Crew"}
+    assert mock_recognize.call_args_list[3].kwargs == {"psm": 3, "scale": 4}
+
+
 @patch("src.card_name_ocr.match_card_name", return_value=None)
 @patch("src.card_name_ocr.recognize_text", return_value="")
 @patch("src.card_name_ocr.capture_window")
