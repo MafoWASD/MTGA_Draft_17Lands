@@ -34,8 +34,16 @@ WIDE_NAME_REGION_HEIGHT_PCT = 0.20
 # Calibrated against real captured text: a clean-ish read still scores ~0.85
 # (e.g. "Ant-Man's Arm � 2" vs "Ant-Man's Army"), so there's headroom to
 # accept noisier reads before risking cross-matching between the ~14 mostly
-# dissimilar card names in a pack.
-FUZZY_MATCH_CUTOFF = 0.4
+# dissimilar card names in a pack. Raised from an initial 0.4 after a real
+# false positive: pure OCR noise from one card ("Madame Masque"'s garbled
+# name banner) scored exactly 0.4 against an unrelated candidate ("Hire a
+# Crew") elsewhere in the same pack, wrongly consuming that name and
+# permanently blocking its real slot from ever resolving. 0.5 keeps every
+# real noisy-but-correct read on record above the line (the tightest,
+# "Giant Growth" read as "o growth a x", scores 0.560) while rejecting that
+# false match (0.4) with real margin; noisier reads that dip below 0.5 still
+# get a shot via the windowed PARTIAL_MATCH_CUTOFF fallback below.
+FUZZY_MATCH_CUTOFF = 0.5
 
 # Reads this short are rejected before scoring at all — difflib's ratio can
 # cross even FUZZY_MATCH_CUTOFF by chance on a couple of stray characters
