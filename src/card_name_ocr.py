@@ -42,6 +42,18 @@ FUZZY_MATCH_CUTOFF = 0.4
 # (real example: OCR read "oe" and it scored 0.5 against "Forest").
 MIN_TEXT_LENGTH_FOR_MATCH = 4
 
+# Whole-string ratio (FUZZY_MATCH_CUTOFF above) penalizes a name that reads
+# cleanly but is surrounded by extra garbled noise (mana-cost icons, artist
+# line) — a long noisy read against a short candidate tanks the ratio even
+# though the name itself is intact. This cutoff instead scores the best-
+# aligned equal-length window of the read against the candidate, so noise
+# elsewhere in the string doesn't matter. Stricter than FUZZY_MATCH_CUTOFF
+# since it's only checked when the whole-string ratio already failed (real
+# example: tight-crop read "...s sland + FS" for a basic land — "sland"
+# scores 0.83 against "Island" as a window, but the full string doesn't
+# come close to 0.4 against it).
+PARTIAL_MATCH_CUTOFF = 0.65
+
 # The Windows Tesseract installer doesn't add itself to PATH by default, so
 # pytesseract's bare "tesseract" command often can't find it even when it's
 # installed. Fall back to the installer's default locations.
@@ -273,6 +285,28 @@ def recognize_text(image: Image.Image) -> str:
     return " ".join(text.split())
 
 
+def _best_partial_ratio(candidate: str, text: str) -> float:
+    """Scores `candidate` against the best-aligned equal-length window of
+    `text`, so noise before/after the real name doesn't drag down the score
+    the way a whole-string ratio would."""
+    candidate = candidate.lower()
+    text = text.lower()
+    window_len = len(candidate)
+    if window_len == 0 or not text:
+        return 0.0
+    if len(text) <= window_len:
+        return difflib.SequenceMatcher(None, candidate, text).ratio()
+
+    best = 0.0
+    for start in range(len(text) - window_len + 1):
+        ratio = difflib.SequenceMatcher(
+            None, candidate, text[start : start + window_len]
+        ).ratio()
+        if ratio > best:
+            best = ratio
+    return best
+
+
 def match_card_name(
     recognized_text: str, candidate_names: List[str]
 ) -> Optional[str]:
@@ -284,13 +318,22 @@ def match_card_name(
     """
     if not recognized_text or not candidate_names:
         return None
-    if len(recognized_text.strip()) < MIN_TEXT_LENGTH_FOR_MATCH:
+    stripped = recognized_text.strip()
+    if len(stripped) < MIN_TEXT_LENGTH_FOR_MATCH:
         return None
 
     matches = difflib.get_close_matches(
         recognized_text, candidate_names, n=1, cutoff=FUZZY_MATCH_CUTOFF
     )
-    return matches[0] if matches else None
+    if matches:
+        return matches[0]
+
+    best_name, best_ratio = None, 0.0
+    for name in candidate_names:
+        ratio = _best_partial_ratio(name, stripped)
+        if ratio > best_ratio:
+            best_name, best_ratio = name, ratio
+    return best_name if best_ratio >= PARTIAL_MATCH_CUTOFF else None
 
 
 def _crop_slot_region(

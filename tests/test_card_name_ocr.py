@@ -210,6 +210,21 @@ def test_match_card_name_rejects_single_character_reads():
     assert match_card_name("7", candidates) is None
 
 
+def test_match_card_name_finds_name_buried_in_noise_via_partial_match():
+    """Real capture: a basic land's tight-crop read was 'Sy | . s sland + FS'
+    — the whole string scores nowhere near FUZZY_MATCH_CUTOFF against
+    'Island', but the 'sland' fragment inside it does once windowed."""
+    candidates = ["Island", "Web Up", "Giant-Sized Flying Ant"]
+
+    assert match_card_name("Sy | . s sland + FS", candidates) == "Island"
+
+
+def test_match_card_name_partial_match_ignores_unrelated_noise():
+    candidates = ["Hawkeye, Master Marksman", "Web Up"]
+
+    assert match_card_name("completely unrelated garbage text", candidates) is None
+
+
 @patch("src.card_name_ocr._get_win32_capture_api", return_value=None)
 def test_capture_window_returns_none_when_api_unavailable(mock_api):
     assert card_name_ocr.capture_window(123) is None
