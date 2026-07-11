@@ -266,8 +266,20 @@ def capture_window(hwnd: int) -> Optional[Image.Image]:
         return None
 
 
-def recognize_text(image: Image.Image) -> str:
-    """Runs OCR on an image and returns the cleaned-up recognized text."""
+def recognize_text(image: Image.Image, psm: int = 6, scale: int = 3) -> str:
+    """Runs OCR on an image and returns the cleaned-up recognized text.
+
+    --psm 6 (uniform block of text) is the default rather than 7 (a single
+    line): a card name that wraps to two lines makes psm 7's single-line
+    assumption fail outright instead of just reading it noisily. But psm 6
+    isn't universal — real capture showed it misread two otherwise-clean
+    name banners entirely (returned near-empty text) because the small
+    mana-cost/ability icons flanking the name confused its "one uniform
+    block" assumption, while --psm 3 (full automatic page segmentation)
+    correctly isolated the text region and read the name. Callers that hit
+    an unresolved slot after the default pass should retry with psm=3 (see
+    identify_cards_in_pack's third/fourth passes below).
+    """
     pytesseract = _get_pytesseract()
     if pytesseract is None:
         return ""
@@ -278,18 +290,17 @@ def recognize_text(image: Image.Image) -> str:
     # a fixed threshold would: it adapts per-image instead of assuming a
     # fixed dark-on-light or light-on-dark polarity. 3x (not 2x) because
     # Tesseract's accuracy on small captured game text scales with how large
-    # the text ends up, well past what 2x gave it to work with.
+    # the text ends up, well past what 2x gave it to work with. `scale` is
+    # overridable because the right size is inconsistent across real
+    # captures — one otherwise-unreadable name only came through at 4x.
     prepared = image.convert("L")
     prepared = ImageOps.autocontrast(prepared)
     prepared = prepared.resize(
-        (prepared.width * 3, prepared.height * 3), Image.LANCZOS
+        (prepared.width * scale, prepared.height * scale), Image.LANCZOS
     )
 
     try:
-        # --psm 6 (uniform block of text) rather than 7 (a single line):
-        # a card name that wraps to two lines makes psm 7's single-line
-        # assumption fail outright instead of just reading it noisily.
-        text = pytesseract.image_to_string(prepared, config="--psm 6")
+        text = pytesseract.image_to_string(prepared, config=f"--psm {psm}")
     except Exception:
         logger.debug("OCR recognition failed", exc_info=True)
         return ""
@@ -449,6 +460,8 @@ def identify_cards_in_pack(
             unresolved_indices.append(index)
             tight_crops[index] = image
 
+    still_unresolved = []
+    wide_crops: Dict[int, Image.Image] = {}
     for index in unresolved_indices:
         slot = slots[index]
         image = _crop_slot_region(
@@ -471,7 +484,43 @@ def identify_cards_in_pack(
             resolved[index] = matched
             remaining_names.remove(matched)
         else:
+            still_unresolved.append(index)
+            wide_crops[index] = image
+
+    # Last resort for slots the uniform-block assumption (psm 6) still
+    # couldn't read: retry the tight crop with full automatic page
+    # segmentation (psm 3), which isolates the name text from small
+    # flanking icons (mana cost, ability symbols) that psm 6 folds into the
+    # same block and garbles. Real capture needed two different scales for
+    # two different otherwise-identical-looking failures, so try both
+    # before giving up.
+    for index in still_unresolved:
+        if not remaining_names:
+            # Nothing left to match against — every candidate name in the
+            # pack has already been claimed by an earlier slot.
             _save_debug_crop(index, "tight", tight_crops[index])
-            _save_debug_crop(index, "wide", image)
+            _save_debug_crop(index, "wide", wide_crops[index])
+            continue
+
+        slot = slots[index]
+        matched = None
+        for scale in (3, 4):
+            recognized_text = recognize_text(tight_crops[index], psm=3, scale=scale)
+            matched = match_card_name(recognized_text, remaining_names)
+            logger.debug(
+                "OCR slot %s retry (psm 3, %dx): raw text %r -> matched %r",
+                slot,
+                scale,
+                recognized_text,
+                matched,
+            )
+            if matched is not None:
+                break
+        if matched is not None:
+            resolved[index] = matched
+            remaining_names.remove(matched)
+        else:
+            _save_debug_crop(index, "tight", tight_crops[index])
+            _save_debug_crop(index, "wide", wide_crops[index])
 
     return resolved
