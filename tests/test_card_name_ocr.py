@@ -199,8 +199,20 @@ def test_match_card_name_returns_none_for_empty_input():
 
 def test_match_card_name_rejects_short_reads_even_if_ratio_would_pass():
     """Real false positive: OCR read 'oe' off a near-blank slot and it
-    scored 0.5 against 'Forest' — well above FUZZY_MATCH_CUTOFF (0.4)."""
+    scored 0.5 against 'Forest' — well above the old FUZZY_MATCH_CUTOFF
+    (0.4), and still above the current one (0.5)."""
     assert match_card_name("oe", ["Forest", "Web Up"]) is None
+
+
+def test_match_card_name_rejects_unrelated_noise_scoring_near_old_cutoff():
+    """Real false positive: garbled noise from one card's name banner
+    ("Madame Masque") scored exactly 0.4 against an unrelated candidate
+    ("Hire a Crew") elsewhere in the same pack — right at the old
+    FUZZY_MATCH_CUTOFF, wrongly consuming that name and permanently
+    blocking its real slot from ever resolving."""
+    candidates = ["Hire a Crew", "Madame Masque", "Web Up"]
+
+    assert match_card_name("�iti a: aes ak", candidates) is None
 
 
 def test_match_card_name_rejects_single_character_reads():
