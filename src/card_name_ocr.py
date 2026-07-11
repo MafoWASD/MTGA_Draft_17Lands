@@ -11,9 +11,15 @@ from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageGrab, ImageOps
 
-from src.logger import create_logger
+from src.logger import DEBUG_LOG_FOLDER, create_logger
 
 logger = create_logger()
+
+# Slots that still fail to resolve after both OCR passes get their crops
+# dumped here so a real failure can be inspected visually instead of only
+# as OCR's text output — some failures (near-empty raw text despite a
+# clearly visible name on screen) can't be diagnosed from the log alone.
+OCR_CROP_DEBUG_DIR = os.path.join(DEBUG_LOG_FOLDER, "ocr_crops")
 
 Rect = Tuple[int, int, int, int]  # (left, top, right, bottom) in screen pixels
 
@@ -366,6 +372,31 @@ def _crop_slot_region(
     return capture_region(region)
 
 
+def _reset_ocr_crop_debug_dir() -> None:
+    """Clears any crop dumps left over from a previous pack, so the folder
+    only ever holds the current run's unresolved slots."""
+    try:
+        if os.path.isdir(OCR_CROP_DEBUG_DIR):
+            for name in os.listdir(OCR_CROP_DEBUG_DIR):
+                os.remove(os.path.join(OCR_CROP_DEBUG_DIR, name))
+        else:
+            os.makedirs(OCR_CROP_DEBUG_DIR, exist_ok=True)
+    except Exception:
+        logger.debug("Could not reset OCR crop debug dir.", exc_info=True)
+
+
+def _save_debug_crop(index: int, label: str, image: Image.Image) -> None:
+    """Best-effort dump of a slot crop that OCR couldn't resolve, so it can
+    be inspected visually — some failures (near-empty raw text despite a
+    clearly visible name on screen) can't be diagnosed from log text alone.
+    Never raises: a debug aid must not break real recognition."""
+    try:
+        os.makedirs(OCR_CROP_DEBUG_DIR, exist_ok=True)
+        image.save(os.path.join(OCR_CROP_DEBUG_DIR, f"slot_{index}_{label}.png"))
+    except Exception:
+        logger.debug("Could not save OCR debug crop for slot %d.", index, exc_info=True)
+
+
 def identify_cards_in_pack(
     hwnd: Optional[int],
     arena_rect: Rect,
@@ -381,10 +412,13 @@ def identify_cards_in_pack(
     read get a second attempt with a taller, looser crop (e.g. basic lands
     and other non-standard frames sometimes place the name slightly
     differently). Returns a dict of slot index -> matched card name,
-    omitting slots OCR still couldn't confidently read after both passes.
+    omitting slots OCR still couldn't confidently read after both passes —
+    those slots' crops are dumped to OCR_CROP_DEBUG_DIR for inspection.
     """
     if not is_ocr_available():
         return {}
+
+    _reset_ocr_crop_debug_dir()
 
     window_image = capture_window(hwnd) if hwnd is not None else None
     origin_x, origin_y, _, _ = arena_rect
@@ -392,6 +426,7 @@ def identify_cards_in_pack(
     remaining_names = list(candidate_names)
     resolved: Dict[int, str] = {}
     unresolved_indices = []
+    tight_crops: Dict[int, Image.Image] = {}
 
     for index, slot in enumerate(slots):
         image = _crop_slot_region(
@@ -412,6 +447,7 @@ def identify_cards_in_pack(
             remaining_names.remove(matched)
         else:
             unresolved_indices.append(index)
+            tight_crops[index] = image
 
     for index in unresolved_indices:
         slot = slots[index]
@@ -434,5 +470,8 @@ def identify_cards_in_pack(
         if matched is not None:
             resolved[index] = matched
             remaining_names.remove(matched)
+        else:
+            _save_debug_crop(index, "tight", tight_crops[index])
+            _save_debug_crop(index, "wide", image)
 
     return resolved

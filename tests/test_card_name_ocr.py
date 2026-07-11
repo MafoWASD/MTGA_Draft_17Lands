@@ -1,3 +1,5 @@
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -426,3 +428,50 @@ def test_identify_cards_in_pack_still_omits_slots_unresolved_after_retry(
     )
 
     assert result == {}
+
+
+@patch("src.card_name_ocr.match_card_name", return_value=None)
+@patch("src.card_name_ocr.recognize_text", return_value="")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_dumps_crops_for_unresolved_slots(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    """A slot that never resolves gets both its tight and wide crops saved
+    to disk, so a real failure can be inspected visually — some failures
+    (near-empty raw text despite a clearly visible name on screen) can't be
+    diagnosed from log text alone."""
+    window_image = MagicMock()
+    mock_capture_window.return_value = window_image
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        debug_dir = os.path.join(tmp_dir, "ocr_crops")
+        with patch.object(card_name_ocr, "OCR_CROP_DEBUG_DIR", debug_dir):
+            identify_cards_in_pack(
+                999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Web Up"]
+            )
+
+        saved_names = [
+            call.args[0]
+            for call in window_image.crop.return_value.save.call_args_list
+        ]
+        assert any("slot_0_tight" in name for name in saved_names)
+        assert any("slot_0_wide" in name for name in saved_names)
+
+
+@patch("src.card_name_ocr.capture_window", return_value=MagicMock())
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_clears_stale_crop_dumps_from_previous_pack(
+    mock_available, mock_capture_window
+):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        debug_dir = os.path.join(tmp_dir, "ocr_crops")
+        os.makedirs(debug_dir)
+        stale_file = os.path.join(debug_dir, "slot_5_tight.png")
+        with open(stale_file, "wb") as f:
+            f.write(b"stale")
+
+        with patch.object(card_name_ocr, "OCR_CROP_DEBUG_DIR", debug_dir):
+            identify_cards_in_pack(999, (0, 0, 1920, 1080), [], ["Web Up"])
+
+        assert not os.path.exists(stale_file)
