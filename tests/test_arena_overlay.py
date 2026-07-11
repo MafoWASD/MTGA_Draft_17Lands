@@ -40,6 +40,14 @@ def ocr_unavailable_by_default():
         yield
 
 
+@pytest.fixture(autouse=True)
+def no_pack_reveal_settle_delay():
+    """The OCR worker sleeps briefly for the pack-reveal animation to settle;
+    skip the real wait so OCR-path tests using _SynchronousThread stay fast."""
+    with patch("src.ui.windows.arena_overlay.time.sleep"):
+        yield
+
+
 def _rec(name, score, is_elite=False, base_win_rate=0.0):
     return SimpleNamespace(
         card_name=name,
@@ -335,6 +343,34 @@ def test_update_data_uses_ocr_to_resolve_true_slot_positions(
     assert len(overlay.slot_data) == 2
     assert overlay.slot_data[0]["card"][constants.DATA_FIELD_NAME] == "Card B"
     assert overlay.slot_data[1]["card"][constants.DATA_FIELD_NAME] == "Card A"
+
+    overlay.destroy()
+
+
+@patch("src.ui.windows.arena_overlay.time.sleep")
+@patch("src.ui.windows.arena_overlay.threading.Thread", _SynchronousThread)
+@patch("src.ui.windows.arena_overlay.card_name_ocr.identify_cards_in_pack")
+@patch("src.ui.windows.arena_overlay.card_name_ocr.is_ocr_available", return_value=True)
+@patch("tkinter.Toplevel.overrideredirect")
+def test_start_ocr_resolution_waits_for_pack_reveal_to_settle(
+    mock_ov, mock_available, mock_identify, mock_sleep, root
+):
+    """A newly-revealed pack's cards animate in; OCR waits before capturing
+    so it doesn't read rows still mid-animation (observed: row 1 read fine,
+    rows 2-3 consistently failed when captured immediately)."""
+    from src.ui.windows.arena_overlay import PACK_REVEAL_SETTLE_DELAY_SEC
+
+    arena_rect = (0, 0, 1920, 1080)
+    tracker = MagicMock(get_rect=MagicMock(return_value=arena_rect))
+    overlay = ArenaOverlay(root, tracker=tracker)
+
+    mock_identify.return_value = {}
+
+    overlay.update_data(
+        [{constants.DATA_FIELD_NAME: "Card A"}], [_rec("Card A", 88)]
+    )
+
+    mock_sleep.assert_called_once_with(PACK_REVEAL_SETTLE_DELAY_SEC)
 
     overlay.destroy()
 
