@@ -6,6 +6,7 @@ Transparent overlay window kept in sync with the MTG Arena game window.
 import queue
 import sys
 import threading
+import time
 import tkinter
 
 import ttkbootstrap as tb
@@ -18,6 +19,12 @@ from src.logger import create_logger
 logger = create_logger()
 
 POLL_INTERVAL_MS = 250
+
+# Arena appears to animate a newly-revealed pack's cards in (observed: OCR
+# reliably read row 1 but consistently failed on rows 2-3 of the same pack,
+# consistent with lower rows still being mid-animation when captured too
+# soon). Give the reveal time to settle before capturing.
+PACK_REVEAL_SETTLE_DELAY_SEC = 0.5
 
 # Windows-only colorkey: pixels of this exact color are made fully invisible
 # and click-through by wm "-transparentcolor", instead of dimming the whole
@@ -206,6 +213,7 @@ class ArenaOverlay(tb.Toplevel):
         hwnd = self.tracker.find_window()
 
         def worker():
+            time.sleep(PACK_REVEAL_SETTLE_DELAY_SEC)
             raw_log_order = list(cards_by_name.keys())
             resolved_names = card_name_ocr.identify_cards_in_pack(
                 hwnd, rect, slots, raw_log_order
