@@ -37,6 +37,15 @@ NAME_REGION_HEIGHT_PCT = 0.11
 WIDE_NAME_REGION_TOP_PCT = 0.0
 WIDE_NAME_REGION_HEIGHT_PCT = 0.20
 
+# Last-resort crop for slots still unresolved after every other pass: takes
+# just this top fraction of the already-captured tight crop (not a new
+# window-relative percentage — a crop of the crop), isolating the text line
+# from card art sitting directly below it. Calibrated against a real
+# basic-land capture where the art (very dark, high internal contrast)
+# dominated OCR for the whole tight-crop region; narrowing to just this band
+# was what let the name through.
+NARROW_TEXT_LINE_HEIGHT_FRACTION = 0.45
+
 # Calibrated against real captured text: a clean-ish read still scores ~0.85
 # (e.g. "Ant-Man's Arm � 2" vs "Ant-Man's Army"), so there's headroom to
 # accept noisier reads before risking cross-matching between the ~14 mostly
@@ -266,7 +275,9 @@ def capture_window(hwnd: int) -> Optional[Image.Image]:
         return None
 
 
-def recognize_text(image: Image.Image, psm: int = 6, scale: int = 3) -> str:
+def recognize_text(
+    image: Image.Image, psm: int = 6, scale: int = 3, autocontrast: bool = True
+) -> str:
     """Runs OCR on an image and returns the cleaned-up recognized text.
 
     --psm 6 (uniform block of text) is the default rather than 7 (a single
@@ -293,8 +304,14 @@ def recognize_text(image: Image.Image, psm: int = 6, scale: int = 3) -> str:
     # the text ends up, well past what 2x gave it to work with. `scale` is
     # overridable because the right size is inconsistent across real
     # captures — one otherwise-unreadable name only came through at 4x.
+    # `autocontrast` is overridable too: a basic land's name banner sits
+    # directly above very dark card art, and stretching contrast across
+    # that whole crop (art included) can wash out the already-fine natural
+    # contrast of white text on the banner — real capture only came through
+    # with autocontrast turned off.
     prepared = image.convert("L")
-    prepared = ImageOps.autocontrast(prepared)
+    if autocontrast:
+        prepared = ImageOps.autocontrast(prepared)
     prepared = prepared.resize(
         (prepared.width * scale, prepared.height * scale), Image.LANCZOS
     )
@@ -516,6 +533,32 @@ def identify_cards_in_pack(
             )
             if matched is not None:
                 break
+        if matched is None:
+            # Last resort for a basic land's simpler frame: the tight crop
+            # includes a sliver of card art right below the name, and real
+            # capture showed that art (very dark, high internal contrast)
+            # can dominate autocontrast/segmentation for the whole crop.
+            # Narrowing to just the top text line and skipping autocontrast
+            # recovered a name every other pass read as fully empty.
+            narrow = tight_crops[index].crop(
+                (
+                    0,
+                    0,
+                    tight_crops[index].width,
+                    round(tight_crops[index].height * NARROW_TEXT_LINE_HEIGHT_FRACTION),
+                )
+            )
+            recognized_text = recognize_text(
+                narrow, psm=11, scale=5, autocontrast=False
+            )
+            matched = match_card_name(recognized_text, remaining_names)
+            logger.debug(
+                "OCR slot %s retry (narrow text-line crop): raw text %r -> matched %r",
+                slot,
+                recognized_text,
+                matched,
+            )
+
         if matched is not None:
             resolved[index] = matched
             remaining_names.remove(matched)
