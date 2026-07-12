@@ -478,6 +478,36 @@ def test_identify_cards_in_pack_retries_psm3_at_a_larger_scale_if_needed(
     assert mock_recognize.call_args_list[3].kwargs == {"psm": 3, "scale": 4}
 
 
+@patch("src.card_name_ocr.match_card_name")
+@patch("src.card_name_ocr.recognize_text")
+@patch("src.card_name_ocr.capture_window")
+@patch("src.card_name_ocr.is_ocr_available", return_value=True)
+def test_identify_cards_in_pack_retries_with_narrow_text_line_crop_as_last_resort(
+    mock_available, mock_capture_window, mock_recognize, mock_match
+):
+    """Real capture: a basic land's name banner sits right above dark card
+    art; every prior pass read empty text because the art dominated the
+    whole tight-crop region. Narrowing to just the top text line (and
+    skipping autocontrast, which also got swamped by the art) recovered
+    text every other pass missed entirely."""
+    window_image = MagicMock()
+    window_image.crop.return_value = Image.new("RGB", (225, 35))
+    mock_capture_window.return_value = window_image
+    mock_recognize.side_effect = ["", "", "", "", "Swamp banner text"]
+    mock_match.side_effect = [None, None, None, None, "Swamp"]
+
+    result = identify_cards_in_pack(
+        999, (0, 0, 1920, 1080), [(200, 150, 400, 430)], ["Swamp"]
+    )
+
+    assert result == {0: "Swamp"}
+    last_call = mock_recognize.call_args_list[4]
+    assert last_call.kwargs == {"psm": 11, "scale": 5, "autocontrast": False}
+    narrow_image = last_call.args[0]
+    expected_height = round(35 * card_name_ocr.NARROW_TEXT_LINE_HEIGHT_FRACTION)
+    assert narrow_image.size == (225, expected_height)
+
+
 @patch("src.card_name_ocr.match_card_name", return_value=None)
 @patch("src.card_name_ocr.recognize_text", return_value="")
 @patch("src.card_name_ocr.capture_window")
