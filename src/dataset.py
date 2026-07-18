@@ -21,6 +21,7 @@ from src.constants import (
     WIN_RATE_OPTIONS,
     WIN_RATE_FIELDS_DICT,
     DATA_FIELD_CMC,
+    DATA_FIELD_ARENA_ID,
 )
 
 
@@ -388,7 +389,12 @@ class Dataset:
                             name, []
                         )
 
-                card_data.append(result_map[string_id])
+                # Shallow copy so tagging the arena_id used for this lookup
+                # never mutates the shared cached rating dict (result_map[
+                # string_id] is often the same object across multiple calls).
+                entry = dict(result_map[string_id])
+                entry[DATA_FIELD_ARENA_ID] = string_id
+                card_data.append(entry)
 
         return card_data
 
