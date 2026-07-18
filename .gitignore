@@ -184,3 +184,11 @@ repomix-output.*
 
 # Personal todo list
 todo.md
+
+# bepinex_mod: never commit Wizards' own game assemblies (Assembly-CSharp.dll,
+# Core.dll, etc.) - copyrighted compiled game code, referenced locally at
+# build time only. See bepinex_mod/README.md.
+bepinex_mod/lib/
+bepinex_mod/src/bin/
+bepinex_mod/src/obj/
+bepinex_mod/src/.vs/
