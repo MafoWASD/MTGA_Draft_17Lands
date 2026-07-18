@@ -72,18 +72,21 @@ macOS actively quarantines unsigned apps downloaded from the internet. To run th
 
 ---
 
-### Optional: Arena Overlay (Beta)
+### Optional: Arena Pack Overlay Mod (BepInEx)
 
 The Arena Overlay (`File -> Preferences -> Arena Overlay (Beta)`, Windows only) draws
-VALUE/GIHWR badges directly on top of your pack in Arena. Since Arena's log doesn't record
-where each card sits on screen, the overlay reads card names off the live screen via OCR to
-place badges correctly. This needs the **Tesseract OCR engine** installed separately (it's not
-a Python package — `pip`/`poetry install` only installs the `pytesseract` wrapper around it):
+VALUE/GIHWR badges directly on your pack, rendered **natively inside Arena itself** by a
+companion mod — see [`bepinex_mod/`](bepinex_mod/README.md) for what it does and how to build
+and install it. Unlike a screen-overlay approach, the mod reads card positions directly out of
+Arena's own draft UI code, so badge placement is always exact, and the badges are part of the
+game's own UI (no separate window to keep aligned/on top).
 
-- **Windows:** Install it from the [UB-Mannheim Tesseract build](https://github.com/UB-Mannheim/tesseract/wiki) (default path
-  `C:\Program Files\Tesseract-OCR\tesseract.exe`).
-- If Tesseract isn't installed, the overlay still works but falls back to the draft log's raw
-  card order, which may not match Arena's on-screen layout.
+- **Requires the mod to be installed** (BepInEx 5 + the compiled `ArenaPackOverlayMod.dll`,
+  see the mod's own README for the build/install steps) — this is a separate, one-time setup
+  outside `poetry install`.
+- If the mod isn't installed or isn't running, the toggle simply has nothing to show — no
+  badges, and no OCR/screen-reading fallback (an earlier OCR-based approach was fully replaced
+  by this mod, not kept as a fallback).
 
 ---
 

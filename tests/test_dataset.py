@@ -530,6 +530,27 @@ def test_otj_get_data_by_name(otj_dataset, name_list, expected_data):
         ), f"Get Data by Name: Collected:{data_list[i]}, Expected:{expected_data[i]}"
 
 
+def test_get_data_by_id_tags_each_result_with_its_own_arena_id(otj_dataset):
+    """The Arena Pack Overlay Mod bridge (src/arena_mod_bridge.py) needs the
+    arena_id back on each card to key its score payload by grpId."""
+    data_list = otj_dataset.get_data_by_id(["73807", 90389])
+
+    assert data_list[0]["arena_id"] == "73807"
+    assert data_list[1]["arena_id"] == "90389"
+
+
+def test_get_data_by_id_does_not_mutate_the_shared_cached_rating(otj_dataset):
+    """arena_id is attached to a shallow copy, not the cached rating dict
+    itself - two different arena_id lookups for the same card mustn't leak
+    each other's arena_id (result_map[string_id] is shared/cached)."""
+    first = otj_dataset.get_data_by_id(["73807"])[0]
+    second = otj_dataset.get_data_by_id(["73807"])[0]
+
+    assert first["arena_id"] == "73807"
+    assert second["arena_id"] == "73807"
+    assert first is not second
+
+
 def test_open_file_fail():
     dataset = Dataset()
     assert Result.ERROR_MISSING_FILE == dataset.open_file("fake_location")

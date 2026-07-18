@@ -65,9 +65,9 @@ class TestDraftApp:
         with patch("src.ui.app_layout.AppLayoutManager.build"):
             app = DraftApp(root, mock_scanner, config)
 
-            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+            with patch("src.ui.app.ArenaModBridge") as mock_arena_overlay_cls:
                 app._enable_arena_overlay()
-                mock_arena_overlay_cls.assert_called_once_with(app.root, app.configuration)
+                mock_arena_overlay_cls.assert_called_once_with()
                 assert app.arena_overlay is not None
 
                 # Calling it again while already enabled must not spawn a second window.
@@ -85,10 +85,10 @@ class TestDraftApp:
         config = Configuration()
         config.settings.arena_overlay_enabled = True
         with patch("src.ui.app_layout.AppLayoutManager.build"):
-            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+            with patch("src.ui.app.ArenaModBridge") as mock_arena_overlay_cls:
                 app = DraftApp(root, mock_scanner, config)
 
-                mock_arena_overlay_cls.assert_called_once_with(app.root, app.configuration)
+                mock_arena_overlay_cls.assert_called_once_with()
                 assert app.arena_overlay is not None
 
     def test_open_settings_toggles_arena_overlay(self, root, mock_scanner):
@@ -97,14 +97,14 @@ class TestDraftApp:
         with patch("src.ui.app_layout.AppLayoutManager.build"):
             app = DraftApp(root, mock_scanner, config)
 
-            with patch("src.ui.app.ArenaOverlay") as mock_arena_overlay_cls:
+            with patch("src.ui.app.ArenaModBridge") as mock_arena_overlay_cls:
                 with patch("src.ui.app.SettingsWindow") as mock_settings_cls:
                     app._open_settings()
                     on_settings_changed = mock_settings_cls.call_args.args[2]
 
                     config.settings.arena_overlay_enabled = True
                     on_settings_changed("arena_overlay_enabled")
-                    mock_arena_overlay_cls.assert_called_once_with(app.root, app.configuration)
+                    mock_arena_overlay_cls.assert_called_once_with()
                     assert app.arena_overlay is not None
 
                     app.arena_overlay.destroy = MagicMock()

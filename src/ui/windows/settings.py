@@ -100,21 +100,8 @@ class SettingsWindow(tkinter.Toplevel):
         )
         size_om.grid(row=3, column=1, sticky="ew", pady=Theme.scaled_val(2))
 
-        ttk.Label(container, text="Pack Layout:").grid(
-            row=4, column=0, sticky="e", padx=Theme.scaled_val(5)
-        )
-        self.vars["pack_layout_mode"] = tkinter.StringVar()
-        pack_layout_om = ttk.OptionMenu(
-            container,
-            self.vars["pack_layout_mode"],
-            "",
-            *constants.PACK_LAYOUT_MODE_LIST,
-            style="TMenubutton",
-        )
-        pack_layout_om.grid(row=4, column=1, sticky="ew", pady=Theme.scaled_val(2))
-
         # --- SECTION: ADVISOR & HUD ---
-        r = 5
+        r = 4
         ttk.Label(
             container, text="INTELLIGENCE & HUD", font=Theme.scaled_font(9, "bold")
         ).grid(
@@ -193,7 +180,6 @@ class SettingsWindow(tkinter.Toplevel):
         self.vars["result_format"].set(s.result_format)
         self.vars["filter_format"].set(s.filter_format)
         self.vars["ui_size"].set(self.original_ui_size)
-        self.vars["pack_layout_mode"].set(s.pack_layout_mode)
 
         # Paths
         self.vars["arena_log_location"].set(s.arena_log_location)
