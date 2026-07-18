@@ -23,7 +23,7 @@ from src.ui.menu_bar import AppMenuBar
 from src.ui.top_bar import TopBarControls
 from src.ui.card_interactions import CardInteractionManager
 from src.ui.windows.overlay import CompactOverlay
-from src.ui.windows.arena_overlay import ArenaOverlay
+from src.arena_mod_bridge import ArenaModBridge
 from src.ui.windows.settings import SettingsWindow
 
 # Delegated Managers
@@ -47,7 +47,7 @@ class DraftApp:
         self.vars: Dict[str, tkinter.Variable] = {}
         self.deck_filter_map: Dict[str, str] = {}
         self.overlay_window: Optional[CompactOverlay] = None
-        self.arena_overlay: Optional[ArenaOverlay] = None
+        self.arena_overlay: Optional[ArenaModBridge] = None
 
         self._initialized = False
         self._rebuilding_ui = False
@@ -239,7 +239,7 @@ class DraftApp:
             if key in ["filter_format"] or key is None:
                 self.top_bar.update_deck_filter_options()
             if (
-                key in ["result_format", "card_colors_enabled", "pack_layout_mode"]
+                key in ["result_format", "card_colors_enabled"]
                 or key is None
             ):
                 self._refresh_ui_data()
@@ -270,7 +270,7 @@ class DraftApp:
     def _enable_arena_overlay(self):
         if self.arena_overlay:
             return
-        self.arena_overlay = ArenaOverlay(self.root, self.configuration)
+        self.arena_overlay = ArenaModBridge()
 
     def _disable_arena_overlay(self):
         if self.arena_overlay:
