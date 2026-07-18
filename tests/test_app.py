@@ -99,18 +99,41 @@ class TestDraftApp:
 
             with patch("src.ui.app.ArenaModBridge") as mock_arena_overlay_cls:
                 with patch("src.ui.app.SettingsWindow") as mock_settings_cls:
-                    app._open_settings()
-                    on_settings_changed = mock_settings_cls.call_args.args[2]
+                    with patch.object(app, "_refresh_ui_data"):
+                        app._open_settings()
+                        on_settings_changed = mock_settings_cls.call_args.args[2]
 
-                    config.settings.arena_overlay_enabled = True
-                    on_settings_changed("arena_overlay_enabled")
-                    mock_arena_overlay_cls.assert_called_once_with()
-                    assert app.arena_overlay is not None
+                        config.settings.arena_overlay_enabled = True
+                        on_settings_changed("arena_overlay_enabled")
+                        mock_arena_overlay_cls.assert_called_once_with()
+                        assert app.arena_overlay is not None
 
-                    app.arena_overlay.destroy = MagicMock()
-                    config.settings.arena_overlay_enabled = False
-                    on_settings_changed("arena_overlay_enabled")
-                    assert app.arena_overlay is None
+                        app.arena_overlay.destroy = MagicMock()
+                        config.settings.arena_overlay_enabled = False
+                        on_settings_changed("arena_overlay_enabled")
+                        assert app.arena_overlay is None
+
+    def test_enabling_arena_overlay_immediately_pushes_current_pack_data(
+        self, root, mock_scanner
+    ):
+        """Real bug: enabling the toggle mid-session created the bridge but
+        never pushed the pack already on screen, so it silently did nothing
+        until the whole app was restarted. Enabling must trigger a refresh
+        immediately instead of waiting for the next natural pack change."""
+        config = Configuration()
+        with patch("src.ui.app_layout.AppLayoutManager.build"):
+            app = DraftApp(root, mock_scanner, config)
+
+            with patch("src.ui.app.ArenaModBridge"):
+                with patch("src.ui.app.SettingsWindow") as mock_settings_cls:
+                    with patch.object(app, "_refresh_ui_data") as mock_refresh:
+                        app._open_settings()
+                        on_settings_changed = mock_settings_cls.call_args.args[2]
+
+                        config.settings.arena_overlay_enabled = True
+                        on_settings_changed("arena_overlay_enabled")
+
+                        mock_refresh.assert_called_once()
 
     @patch("src.ui.menu_bar.filedialog.asksaveasfile")
     @patch("tkinter.messagebox.showinfo")
