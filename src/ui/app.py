@@ -261,6 +261,11 @@ class DraftApp:
             if key == "arena_overlay_enabled":
                 if s.arena_overlay_enabled:
                     self._enable_arena_overlay()
+                    # Push the current pack's scores immediately - without
+                    # this, a freshly-created bridge sits idle until the
+                    # next natural pack change, making the toggle look
+                    # broken if the user is already mid-pick when enabling.
+                    self._refresh_ui_data()
                 else:
                     self._disable_arena_overlay()
 
