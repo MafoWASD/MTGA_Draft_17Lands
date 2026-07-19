@@ -23,5 +23,12 @@ namespace ArenaPackOverlayMod
 
             PackDataWriter.Init();
         }
+
+        // Periodic score refresh is NOT done here - see
+        // ScoreRefreshTickPatch.cs. This plugin's own MonoBehaviour.Update()
+        // was confirmed (via an unconditional log statement) to never fire
+        // at all in this environment, for reasons never pinned down -
+        // piggybacking on DraftPackHolder's own proven-working Update()
+        // sidesteps that entirely.
     }
 }
