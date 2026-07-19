@@ -35,6 +35,7 @@ bepinex_mod/lib/
   UnityEngine.CoreModule.dll
   Unity.TextMeshPro.dll
   UnityEngine.UI.dll
+  UnityEngine.UIModule.dll
   Newtonsoft.Json.dll
   0Harmony.dll        (from BepInEx/core, see install step 1 below)
   BepInEx.dll          (from BepInEx/core, see install step 1 below)
